@@ -102,7 +102,7 @@ export default function ExecutionHistoryPage() {
                         <p className="text-muted-foreground text-center py-10">No execution history recorded yet.</p>
                     ) : (
                         <Accordion type="multiple" value={openAccordionItems} onValueChange={setOpenAccordionItems} className="w-full space-y-3">
-                            {executionHistory.map((log) => {
+                            {executionHistory.sort((a, b) => b.startTime - a.startTime).map((log) => { // Sort by startTime descending
                                 const { IconComp, colorClass, bgClass, label } = getStatusDetails(log.overallStatus);
                                 const duration = log.endTime ? ((log.endTime - log.startTime) / 1000).toFixed(1) : '-';
 
@@ -186,3 +186,5 @@ export default function ExecutionHistoryPage() {
         </main>
     );
 }
+
+    
