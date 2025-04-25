@@ -621,9 +621,12 @@ export default function Home() {
              {/* Simplified Skeleton Layout */}
              <Skeleton className="h-8 w-48 mb-6" />
              <div className="flex justify-end gap-2 mb-6">
+                 {/* Always render the same number of skeletons regardless of admin status */}
                  <Skeleton className="h-10 w-24" />
                  <Skeleton className="h-10 w-24" />
-                 {isAdmin && <Skeleton className="h-10 w-24" />} {/* Conditionally render skeleton */}
+                 <Skeleton className="h-10 w-24" /> {/* Skeleton for Admin User Management */}
+                 <Skeleton className="h-10 w-24" /> {/* Skeleton for History */}
+                 <Skeleton className="h-10 w-24" /> {/* Skeleton for Logout */}
              </div>
              <Card className="mb-6">
                 <CardHeader>
@@ -641,11 +644,13 @@ export default function Home() {
                   <Skeleton className="h-10 w-24" />
              </div>
              <Tabs defaultValue="config" className="w-full">
+                  {/* Render 3 tabs regardless of admin for skeleton layout consistency */}
                  <TabsList className="grid w-full grid-cols-3 mb-6">
                      <Skeleton className="h-10 w-full" />
                      <Skeleton className="h-10 w-full" />
                      <Skeleton className="h-10 w-full" />
                  </TabsList>
+                 {/* Render skeleton content for config tab */}
                   <TabsContent value="config">
                        <Card>
                            <CardHeader>
@@ -885,6 +890,11 @@ export default function Home() {
                   <VerificationConfig initialSteps={activeSet?.steps || []} onStepsChange={handleStepsChange} />
                 </TabsContent>
             )}
+             {!isAdmin && ( // Read-only view for non-admins
+                  <TabsContent value="config">
+                     <VerificationConfig initialSteps={activeSet?.steps || []} onStepsChange={() => {}} />
+                 </TabsContent>
+             )}
             <TabsContent value="execution">
               <VerificationExecution steps={activeSet?.steps || []} isRunning={isRunning} />
             </TabsContent>
@@ -921,7 +931,7 @@ export default function Home() {
                 </CardHeader>
                 <CardContent className="pt-0">
                     <p className="text-muted-foreground">
-                       { isAdmin ? "Please add or select a configuration to begin." : "Please select a configuration to begin."}
+                       { verificationSets.length > 0 ? "Please select a configuration to begin." : (isAdmin ? "Please add or select a configuration to begin." : "No configurations available. Ask an admin to add one.")}
                     </p>
                 </CardContent>
             </Card>
@@ -930,4 +940,5 @@ export default function Home() {
     </main>
   );
 }
+
 
