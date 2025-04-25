@@ -23,7 +23,7 @@ export interface ApiVerificationStep extends VerificationStepBase {
   apiUrl: string;
   apiKeyPath: string; // e.g., "data.status" or "user.id"
   expectedValue: string; // Value to check against the key path
-  // Optional: Add method, headers, body later if needed
+  apiToken?: string; // Optional authentication token (e.g., Bearer token)
 }
 
 // Union type for any verification step

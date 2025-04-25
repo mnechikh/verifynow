@@ -6,8 +6,8 @@ import type { VerificationStep, CriteriaVerificationStep, ApiVerificationStep } 
 import { VerificationStepForm } from './verification-step-form';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Trash2, Edit, FileText, Link as LinkIcon } from 'lucide-react'; // Added LinkIcon
-import { Badge } from "@/components/ui/badge"; // Added Badge
+import { Trash2, Edit, FileText, Link as LinkIcon, KeyRound } from 'lucide-react'; // Added LinkIcon and KeyRound
+import { Badge } from "@/components/ui/badge";
 
 interface VerificationConfigProps {
   initialSteps: VerificationStep[];
@@ -77,7 +77,8 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
             ...baseData,
             apiUrl: editingStep.apiUrl,
             apiKeyPath: editingStep.apiKeyPath,
-            expectedValue: editingStep.expectedValue
+            expectedValue: editingStep.expectedValue,
+            apiToken: editingStep.apiToken // Include token for editing
         };
     }
     return baseData; // Should not happen with defined types
@@ -95,10 +96,10 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
                 <ul className="space-y-4 mb-6">
                     {steps.map((step) => (
                     <li key={step.id} className="border p-4 rounded-md shadow-sm flex justify-between items-start bg-card">
-                        <div className="flex-grow space-y-1">
-                            <div className="flex items-center space-x-2">
+                        <div className="flex-grow space-y-1 break-words overflow-hidden"> {/* Added break-words and overflow-hidden */}
+                            <div className="flex items-center space-x-2 flex-wrap"> {/* Added flex-wrap */}
                                 <h3 className="font-semibold">{step.name}</h3>
-                                <Badge variant="outline" className="capitalize">
+                                <Badge variant="outline" className="capitalize shrink-0"> {/* Added shrink-0 */}
                                     {step.type === 'criteria' ? <FileText className="h-3 w-3 mr-1"/> : <LinkIcon className="h-3 w-3 mr-1"/>}
                                     {step.type}
                                 </Badge>
@@ -112,6 +113,13 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
                                     <p><span className="font-medium">API URL:</span> {step.apiUrl}</p>
                                     <p><span className="font-medium">Key Path:</span> {step.apiKeyPath}</p>
                                     <p><span className="font-medium">Expected Value:</span> {step.expectedValue}</p>
+                                    {step.apiToken && (
+                                         <p className="flex items-center">
+                                            <KeyRound className="h-3 w-3 mr-1 text-muted-foreground shrink-0"/>
+                                            <span className="font-medium mr-1">API Token:</span>
+                                            <span className="italic text-muted-foreground">Provided (masked)</span>
+                                         </p>
+                                    )}
                                 </div>
                             )}
                         </div>

@@ -7,14 +7,25 @@ import { VerificationExecution } from '@/components/verification-execution';
 import { VerificationReport } from '@/components/verification-report';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card"; // Ensure Card and CardContent are imported
 import type { VerificationStep, VerificationStatus, CriteriaVerificationStep, ApiVerificationStep } from '@/types/verification';
 import { Play, Settings, FileText, RotateCcw, Loader2 } from 'lucide-react';
 
 // Utility function to get value from nested object using dot notation path
 const getValueFromPath = (obj: any, path: string): any => {
-  return path.split(/[.[\]]+/).filter(Boolean).reduce((acc, part) => acc && acc[part], obj);
+  return path.split(/[.[\]]+/).filter(Boolean).reduce((acc, part) => {
+    // Handle array index access like 'items[0]'
+    const arrayMatch = part.match(/^(\w+)\[(\d+)\]$/);
+    if (arrayMatch) {
+        const arrayName = arrayMatch[1];
+        const indexNum = parseInt(arrayMatch[2], 10);
+        return acc && acc[arrayName] && acc[arrayName][indexNum];
+    }
+    // Handle regular property access
+    return acc && acc[part];
+  }, obj);
 };
+
 
 // Mock function to simulate step execution
 const simulateStepExecution = async (step: VerificationStep): Promise<Partial<VerificationStep>> => {
@@ -37,65 +48,97 @@ const simulateStepExecution = async (step: VerificationStep): Promise<Partial<Ve
       }
     } else if (step.type === 'api') {
       try {
-        // Simulate API call - In a real app, replace this with fetch
+        // Simulate API call - In a real app, replace this with actual fetch
         const mockApiResponse = async () => {
-          // Simulate different responses based on URL or expected value for testing
-          if (step.apiUrl.includes('fail')) {
-             return { status: 'error', message: 'Simulated API failure' };
-          }
-          if (step.expectedValue.toLowerCase() === 'warn_me') {
-              return { data: { status: 'OK but with caveats' } }; // Simulate a warning case
-          }
-          // Simulate a successful response structure
-          let response: any = {};
-          let current = response;
-          const parts = step.apiKeyPath.split(/[.[\]]+/).filter(Boolean);
-          parts.forEach((part, index) => {
-              if (index === parts.length - 1) {
-                  current[part] = step.expectedValue; // Set the final part to the expected value for success
-              } else {
-                 // Handle array index notation
-                 const arrayMatch = part.match(/^(\w+)\[(\d+)\]$/);
-                 if (arrayMatch) {
-                     const arrayName = arrayMatch[1];
-                     const indexNum = parseInt(arrayMatch[2], 10);
-                     if (!current[arrayName]) current[arrayName] = [];
-                     while(current[arrayName].length <= indexNum) {
-                        current[arrayName].push({});
-                     }
-                      current = current[arrayName][indexNum];
-                 } else {
-                     current[part] = {};
-                     current = current[part];
-                 }
-              }
-          });
-          return response;
+            console.log(`Simulating API call to ${step.apiUrl} ${step.apiToken ? 'with' : 'without'} token.`);
+            // Simulate headers check (very basic)
+            // Example: If URL implies auth and token is bad or missing
+            if (step.apiUrl.includes('requires-auth') && (!step.apiToken || !step.apiToken.startsWith('Bearer valid'))) {
+                 console.warn(`Simulated Unauthorized for ${step.apiUrl}. Token: ${step.apiToken}`);
+                 return { status: 401, message: 'Simulated Unauthorized - Check API Token' };
+            }
+            if (step.apiUrl.includes('fail')) {
+                return { status: 500, message: 'Simulated API failure' };
+            }
+            if (step.expectedValue.toLowerCase() === 'warn_me') {
+                return { data: { status: 'OK but with caveats' } }; // Simulate a warning case
+            }
+             // Simulate a successful response structure based on path
+            let response: any = {};
+            let current = response;
+            const parts = step.apiKeyPath.split(/[.[\]]+/).filter(Boolean);
+
+            parts.forEach((part, index) => {
+                const isLastPart = index === parts.length - 1;
+                const arrayMatch = part.match(/^(\w+)\[(\d+)\]$/);
+
+                if (arrayMatch) {
+                    const arrayName = arrayMatch[1];
+                    const indexNum = parseInt(arrayMatch[2], 10);
+
+                    if (!current[arrayName]) {
+                        current[arrayName] = [];
+                    }
+                     // Ensure the array is long enough
+                    while (current[arrayName].length <= indexNum) {
+                        current[arrayName].push(isLastPart ? null : {}); // Use null for the last part's placeholder if it's the target index
+                    }
+
+                     if (isLastPart) {
+                        current[arrayName][indexNum] = step.expectedValue; // Set the final part to the expected value
+                    } else {
+                         if (typeof current[arrayName][indexNum] !== 'object' || current[arrayName][indexNum] === null) {
+                             current[arrayName][indexNum] = {}; // Ensure it's an object if not the last part
+                         }
+                        current = current[arrayName][indexNum];
+                    }
+                } else {
+                    // Handle regular object property
+                     if (isLastPart) {
+                        current[part] = step.expectedValue;
+                    } else {
+                        if (typeof current[part] !== 'object' || current[part] === null) {
+                             current[part] = {};
+                        }
+                        current = current[part];
+                    }
+                }
+            });
+            return { data: response }; // Wrap response in data for getValueFromPath compatibility
         };
 
-        const response = await mockApiResponse();
-        const actualValue = getValueFromPath(response, step.apiKeyPath);
+        const responseWrapper = await mockApiResponse();
 
-        if (actualValue === undefined) {
-          status = 'failure';
-          resultMessage = `API check failed: Key path "${step.apiKeyPath}" not found in response.`;
-        } else if (String(actualValue) === step.expectedValue) {
-          status = 'success';
-          resultMessage = `API check successful. Value at "${step.apiKeyPath}" matched "${step.expectedValue}".`;
-           // Simulate a warning even on success based on a condition
-          if (step.expectedValue.toLowerCase() === 'warn_me' || randomOutcome < 0.2) {
-             status = 'warning';
-             resultMessage = `API check warning: Value matched, but potential issue detected. (${String(actualValue)})`;
-          }
+        // Check for simulated HTTP error status codes first
+        if (responseWrapper.status && responseWrapper.status >= 400) {
+             status = 'failure';
+             resultMessage = `API request failed: Status ${responseWrapper.status} - ${responseWrapper.message || 'Error'}`;
         } else {
-          status = 'failure';
-          resultMessage = `API check failed: Expected "${step.expectedValue}" at "${step.apiKeyPath}", but got "${String(actualValue)}".`;
+            const responseData = responseWrapper.data; // Extract data if no error status
+            const actualValue = getValueFromPath(responseData, step.apiKeyPath);
+
+            if (actualValue === undefined) {
+            status = 'failure';
+            resultMessage = `API check failed: Key path "${step.apiKeyPath}" not found in response. Response: ${JSON.stringify(responseData)}`;
+            } else if (String(actualValue) === step.expectedValue) {
+            status = 'success';
+            resultMessage = `API check successful. Value at "${step.apiKeyPath}" matched "${step.expectedValue}".`;
+            // Simulate a warning even on success based on a condition
+            if (step.expectedValue.toLowerCase() === 'warn_me' || randomOutcome < 0.2) {
+                status = 'warning';
+                resultMessage = `API check warning: Value matched, but potential issue detected. (${String(actualValue)})`;
+            }
+            } else {
+            status = 'failure';
+            resultMessage = `API check failed: Expected "${step.expectedValue}" at "${step.apiKeyPath}", but got "${String(actualValue)}". Response: ${JSON.stringify(responseData)}`;
+            }
         }
+
 
       } catch (error) {
         console.error("API Step Simulation Error:", error);
         status = 'failure';
-        resultMessage = `API check failed: Error during simulated API call.`;
+        resultMessage = `API check failed: Error during simulated API call. Check console for details.`;
       }
     }
 
@@ -199,8 +242,8 @@ export default function Home() {
           {isReportVisible ? (
             <VerificationReport steps={steps} />
           ) : (
-             <Card className="text-center py-10">
-                <CardContent className="pt-6"> {/* Added pt-6 to align with Card standard */}
+             <Card className="text-center py-10"> {/* Use Card for consistent styling */}
+                <CardContent className="pt-6">
                     <p className="text-muted-foreground">
                         {steps.length === 0
                          ? "Configure verification steps first."

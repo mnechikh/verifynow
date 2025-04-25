@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form"; // Added FormDescription
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import type { VerificationStep, StepType, CriteriaVerificationStep, ApiVerificationStep } from '@/types/verification';
 
@@ -27,6 +27,7 @@ const criteriaSchema = baseSchema.extend({
   apiUrl: z.string().optional(), // Keep optional to avoid validation errors when not selected
   apiKeyPath: z.string().optional(),
   expectedValue: z.string().optional(),
+  apiToken: z.string().optional(), // Keep optional
 });
 
 // Schema for 'api' type
@@ -35,6 +36,7 @@ const apiSchema = baseSchema.extend({
   apiUrl: z.string().url({ message: "Please enter a valid URL." }).min(1, { message: "API URL is required." }),
   apiKeyPath: z.string().min(1, { message: "Response Key Path is required." }),
   expectedValue: z.string().min(1, { message: "Expected Value is required." }),
+  apiToken: z.string().optional(), // Optional API token
   criteria: z.string().optional(), // Keep optional
 });
 
@@ -62,6 +64,7 @@ export function VerificationStepForm({
    const defaultValues: Partial<VerificationStepFormValues> = initialData ? {
         ...initialData,
         type: initialData.type || 'criteria', // Default to criteria if not set
+        apiToken: initialData.apiToken || '', // Include apiToken
     } : {
         name: "",
         description: "",
@@ -70,6 +73,7 @@ export function VerificationStepForm({
         apiUrl: "",
         apiKeyPath: "",
         expectedValue: "",
+        apiToken: "", // Default empty token
     };
 
 
@@ -86,9 +90,13 @@ export function VerificationStepForm({
       form.resetField("apiUrl");
       form.resetField("apiKeyPath");
       form.resetField("expectedValue");
+      form.resetField("apiToken");
     } else if (selectedType === 'api') {
       form.resetField("criteria");
     }
+     // Keep apiToken field value when switching back to API type if needed
+     // form.setValue('apiToken', form.getValues('apiToken') || ''); // Optional: uncomment to preserve token across type switches
+
   }, [selectedType, form]);
 
 
@@ -110,11 +118,21 @@ export function VerificationStepForm({
         apiUrl: values.apiUrl,
         apiKeyPath: values.apiKeyPath,
         expectedValue: values.expectedValue,
+        apiToken: values.apiToken || undefined, // Submit token or undefined if empty
       };
     }
 
     onSubmit(submitData);
-    form.reset(); // Reset form to default values after submission
+    form.reset( { // Reset form to default values after submission, explicitly setting type back if needed
+        name: "",
+        description: "",
+        type: 'criteria', // Reset type to default
+        criteria: "",
+        apiUrl: "",
+        apiKeyPath: "",
+        expectedValue: "",
+        apiToken: "",
+    });
   };
 
   return (
@@ -133,7 +151,7 @@ export function VerificationStepForm({
                             <FormItem>
                             <FormLabel>Step Name</FormLabel>
                             <FormControl>
-                                <Input placeholder="e.g., Check Python Version" {...field} />
+                                <Input placeholder="e.g., Check API Health" {...field} />
                             </FormControl>
                             <FormMessage />
                             </FormItem>
@@ -196,6 +214,9 @@ export function VerificationStepForm({
                                 <FormControl>
                                     <Textarea placeholder="e.g., Python >= 3.8 OR Expected output text" {...field} value={field.value ?? ''}/>
                                 </FormControl>
+                                 <FormDescription>
+                                    Text or criteria expected from a command output or log file.
+                                </FormDescription>
                                 <FormMessage />
                                 </FormItem>
                             )}
@@ -213,6 +234,9 @@ export function VerificationStepForm({
                                     <FormControl>
                                         <Input placeholder="https://api.example.com/health" {...field} value={field.value ?? ''}/>
                                     </FormControl>
+                                     <FormDescription>
+                                        The full URL of the API endpoint to check.
+                                    </FormDescription>
                                     <FormMessage />
                                     </FormItem>
                                 )}
@@ -226,6 +250,9 @@ export function VerificationStepForm({
                                     <FormControl>
                                         <Input placeholder="e.g., data.status or user[0].active" {...field} value={field.value ?? ''}/>
                                     </FormControl>
+                                     <FormDescription>
+                                        Dot notation path to the value in the JSON response (e.g., `data.items[0].name`).
+                                    </FormDescription>
                                      <FormMessage />
                                     </FormItem>
                                 )}
@@ -239,7 +266,26 @@ export function VerificationStepForm({
                                     <FormControl>
                                         <Input placeholder="e.g., 'OK' or 'true' or '123'" {...field} value={field.value ?? ''}/>
                                     </FormControl>
+                                      <FormDescription>
+                                        The exact string value expected at the specified key path.
+                                    </FormDescription>
                                      <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
+                             <FormField
+                                control={form.control}
+                                name="apiToken"
+                                render={({ field }) => (
+                                    <FormItem>
+                                    <FormLabel>API Token (Optional)</FormLabel>
+                                    <FormControl>
+                                        <Input type="password" placeholder="Enter API token (e.g., Bearer Token)" {...field} value={field.value ?? ''} />
+                                    </FormControl>
+                                     <FormDescription>
+                                        Authentication token if required by the API (will be sent in Authorization header).
+                                    </FormDescription>
+                                    <FormMessage />
                                     </FormItem>
                                 )}
                             />
