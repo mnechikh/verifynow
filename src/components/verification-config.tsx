@@ -1,3 +1,4 @@
+
 "use client";
 
 import type * as React from 'react';
@@ -6,8 +7,9 @@ import type { VerificationStep, CriteriaVerificationStep, ApiVerificationStep } 
 import { VerificationStepForm } from './verification-step-form';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Trash2, Edit, FileText, Link as LinkIcon, KeyRound } from 'lucide-react'; // Added LinkIcon and KeyRound
+import { Trash2, Edit, FileText, Link as LinkIcon, KeyRound, Ban } from 'lucide-react'; // Added LinkIcon, KeyRound, Ban
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from '@/hooks/useAuth'; // Import useAuth
 
 interface VerificationConfigProps {
   initialSteps: VerificationStep[];
@@ -15,6 +17,8 @@ interface VerificationConfigProps {
 }
 
 export function VerificationConfig({ initialSteps, onStepsChange }: VerificationConfigProps) {
+  const { checkRole } = useAuth(); // Use auth hook
+  const isAdmin = checkRole(['admin']);
   const [steps, setSteps] = useState<VerificationStep[]>(initialSteps);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
 
@@ -25,6 +29,7 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
   }, [initialSteps]);
 
   const addStep = (newStepData: Omit<VerificationStep, 'id' | 'status'>) => {
+    if (!isAdmin) return; // Prevent adding if not admin
     const newStep: VerificationStep = {
       ...newStepData,
       id: Date.now().toString(), // Simple ID generation
@@ -36,6 +41,7 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
   };
 
   const deleteStep = (id: string) => {
+     if (!isAdmin) return; // Prevent deleting if not admin
     const updatedSteps = steps.filter(step => step.id !== id);
     setSteps(updatedSteps);
     onStepsChange(updatedSteps);
@@ -46,6 +52,7 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
   };
 
    const startEditing = (id: string) => {
+     if (!isAdmin) return; // Prevent editing if not admin
     setEditingStepId(id);
   };
 
@@ -54,7 +61,7 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
   };
 
   const updateStep = (updatedStepData: Omit<VerificationStep, 'id' | 'status'>) => {
-    if (!editingStepId) return;
+    if (!isAdmin || !editingStepId) return; // Prevent updating if not admin
     const updatedSteps = steps.map(step =>
       step.id === editingStepId ? { ...step, ...updatedStepData, status: 'pending' } : step // Reset status on edit
     );
@@ -95,7 +102,11 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
       <Card>
         <CardHeader>
           <CardTitle>Configure Verification Steps</CardTitle>
-          <CardDescription>Define the steps needed to verify the installation using text criteria or API checks.</CardDescription>
+          <CardDescription>
+             {isAdmin
+                ? "Define the steps needed to verify the installation using text criteria or API checks."
+                : "View the configured verification steps. Only admins can modify these."}
+          </CardDescription>
         </CardHeader>
         <CardContent>
             {steps.length > 0 && (
@@ -129,35 +140,48 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
                                 </div>
                             )}
                         </div>
-                        <div className="flex space-x-1 shrink-0 ml-4">
-                            <Button variant="ghost" size="icon" onClick={() => startEditing(step.id)} aria-label={`Edit ${step.name}`}>
-                                <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="icon" onClick={() => deleteStep(step.id)} aria-label={`Delete ${step.name}`}>
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                        </div>
+                         {isAdmin && ( // Only show edit/delete buttons to admins
+                            <div className="flex space-x-1 shrink-0 ml-4">
+                                <Button variant="ghost" size="icon" onClick={() => startEditing(step.id)} aria-label={`Edit ${step.name}`}>
+                                    <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" onClick={() => deleteStep(step.id)} aria-label={`Delete ${step.name}`}>
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                            </div>
+                         )}
                     </li>
                     ))}
                 </ul>
             )}
 
-           {editingStepId && editingStep ? (
-                <div className='mt-4 space-y-2'>
-                    <h4 className="font-semibold text-lg mb-2">Editing Step: {editingStep.name}</h4>
-                    <VerificationStepForm
-                        key={editingStepId} // Force re-render on edit change
-                        onSubmit={updateStep}
-                        initialData={getInitialFormData()}
-                        buttonText="Update Step"
-                    />
-                    <Button variant="outline" onClick={cancelEditing} className="mt-2">Cancel Edit</Button>
-                </div>
-            ) : (
-                 <VerificationStepForm onSubmit={addStep} />
+           {/* Only show Add/Edit form to Admins */}
+            {isAdmin && (
+                <>
+                   {editingStepId && editingStep ? (
+                        <div className='mt-4 space-y-2'>
+                            <h4 className="font-semibold text-lg mb-2">Editing Step: {editingStep.name}</h4>
+                            <VerificationStepForm
+                                key={editingStepId} // Force re-render on edit change
+                                onSubmit={updateStep}
+                                initialData={getInitialFormData()}
+                                buttonText="Update Step"
+                                disabled={!isAdmin} // Disable form if not admin (redundant but safe)
+                            />
+                            <Button variant="outline" onClick={cancelEditing} className="mt-2">Cancel Edit</Button>
+                        </div>
+                    ) : (
+                        <VerificationStepForm onSubmit={addStep} disabled={!isAdmin} /> // Disable form if not admin
+                    )}
+                </>
             )}
 
-             {steps.length === 0 && !editingStepId && (
+             {steps.length === 0 && !isAdmin && (
+                 <p className="text-muted-foreground text-center py-4 flex items-center justify-center gap-2">
+                      <Ban className="h-4 w-4"/> No steps defined. Only admins can add steps.
+                 </p>
+             )}
+             {steps.length === 0 && isAdmin && !editingStepId && (
                 <p className="text-muted-foreground text-center py-4">No steps defined for this configuration. Add a step below.</p>
             )}
 
@@ -166,3 +190,4 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
     </div>
   );
 }
+

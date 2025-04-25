@@ -1,7 +1,9 @@
+
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google'; // Using Inter as a standard sans-serif font
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster"; // Import Toaster
+import { AuthProvider } from '@/hooks/useAuth'; // Import AuthProvider
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' });
 
@@ -18,9 +20,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} font-sans antialiased bg-background`}>
-        {children}
-        <Toaster /> {/* Add Toaster here */}
+        <AuthProvider> {/* Wrap with AuthProvider */}
+          {children}
+          <Toaster /> {/* Add Toaster here */}
+        </AuthProvider>
       </body>
     </html>
   );
 }
+

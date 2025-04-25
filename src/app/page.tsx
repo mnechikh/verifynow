@@ -17,8 +17,9 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import type { VerificationStep, VerificationStatus, CriteriaVerificationStep, ApiVerificationStep, VerificationSet, ExecutionLogEntry } from '@/types/verification';
-import { Play, Settings, FileText, RotateCcw, Loader2, Upload, Download, PlusCircle, Trash2, Edit, Copy, RefreshCcw, History } from 'lucide-react'; // Added History icon
+import { Play, Settings, FileText, RotateCcw, Loader2, Upload, Download, PlusCircle, Trash2, Edit, Copy, RefreshCcw, History, LogOut, UserCog } from 'lucide-react'; // Added History, LogOut, UserCog icons
 import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
+import { useAuth } from '@/hooks/useAuth'; // Import useAuth
 
 
 // --- Helper Functions ---
@@ -180,9 +181,11 @@ const simulateStepExecution = async (step: VerificationStep): Promise<Partial<Ve
         resultMessage = 'Unknown step type encountered.';
     }
     console.log(`Step ${step.name} finished with status: ${status}`); // Added log
-    resolve({ status, resultMessage });
+    // Resolve only status and message, keep other fields as they were
+     resolve({ status, resultMessage });
   });
 };
+
 
 // Function to validate imported JSON data (verification sets)
 const validateImportedData = (data: any): data is VerificationSet[] => {
@@ -199,13 +202,15 @@ const validateImportedData = (data: any): data is VerificationSet[] => {
       typeof step.id === 'string' &&
       typeof step.name === 'string' &&
       typeof step.description === 'string' &&
-      ['pending', 'running', 'success', 'failure', 'warning'].includes(step.status) && // Check status enum
+      // Status is reset on import, no need to validate it strictly here
+      // ['pending', 'running', 'success', 'failure', 'warning'].includes(step.status) &&
       (step.type === 'criteria' || step.type === 'api') && // Check type enum
       (step.type === 'criteria' ? typeof step.criteria === 'string' : true) &&
       (step.type === 'api' ?
         typeof step.apiUrl === 'string' &&
         typeof step.apiKeyPath === 'string' &&
-        typeof step.expectedValue === 'string'
+        typeof step.expectedValue === 'string' &&
+        (typeof step.apiToken === 'string' || step.apiToken === undefined || step.apiToken === null) // Allow optional token
         : true)
     )
   );
@@ -226,6 +231,7 @@ const MAX_EXECUTION_HISTORY = 50; // Limit history size
 
 export default function Home() {
   const { toast } = useToast();
+  const { currentUser, logout, checkRole, isLoading: isAuthLoading } = useAuth(); // Use auth hook
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [verificationSets, setVerificationSets] = useLocalStorage<VerificationSet[]>('verificationSets', []);
   const [activeSetId, setActiveSetId] = useLocalStorage<string | null>('activeVerificationSetId', null);
@@ -238,6 +244,9 @@ export default function Home() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [isClient, setIsClient] = useState(false); // State to track client-side mount
 
+  // Determine user role capabilities
+  const isAdmin = checkRole(['admin']);
+
   // Set isClient to true once the component mounts
   useEffect(() => {
     setIsClient(true);
@@ -249,14 +258,15 @@ export default function Home() {
    // Ensure an active set exists on mount if there are sets but no active ID
    useEffect(() => {
     // Only run this logic on the client after mount
-    if (isClient) {
+    if (isClient && !isAuthLoading) { // Check auth loading status too
         if (verificationSets.length > 0 && !activeSetId && !activeSet) {
             setActiveSetId(verificationSets[0].id);
         } else if (verificationSets.length === 0 && activeSetId) {
             setActiveSetId(null); // Clear active ID if no sets exist
         }
     }
-   }, [verificationSets, activeSetId, activeSet, setActiveSetId, isClient]); // Add isClient dependency
+   }, [verificationSets, activeSetId, activeSet, setActiveSetId, isClient, isAuthLoading]); // Add dependencies
+
 
    // Check if the report was previously visible for the current active set
    useEffect(() => {
@@ -270,7 +280,7 @@ export default function Home() {
 
 
   const handleStepsChange = (updatedSteps: VerificationStep[]) => {
-    if (!activeSetId) return;
+     if (!activeSetId || !isAdmin) return; // Prevent changes if not admin
     const updatedSets = verificationSets.map(set =>
       set.id === activeSetId ? { ...set, steps: updatedSteps } : set
     );
@@ -420,9 +430,10 @@ export default function Home() {
      setActiveTab("config");
   };
 
-   // --- Configuration Set Management ---
+   // --- Configuration Set Management (Admin Only) ---
 
     const addConfigurationSet = () => {
+        if (!isAdmin) return;
         if (!newSetName.trim()) {
             toast({ title: "Error", description: "Configuration name cannot be empty.", variant: "destructive" });
             return;
@@ -441,6 +452,7 @@ export default function Home() {
     };
 
     const deleteConfigurationSet = (setId: string) => {
+        if (!isAdmin) return;
         const setToDelete = verificationSets.find(set => set.id === setId);
         if (!setToDelete) return;
 
@@ -457,6 +469,7 @@ export default function Home() {
     };
 
     const startEditingName = (setId: string) => {
+         if (!isAdmin) return;
         const set = verificationSets.find(s => s.id === setId);
         if (set) {
             setEditingSetName(set.name);
@@ -465,7 +478,7 @@ export default function Home() {
     };
 
     const saveEditedName = () => {
-        if (!activeSetId || !editingSetName.trim()) {
+        if (!isAdmin || !activeSetId || !editingSetName.trim()) {
              toast({ title: "Error", description: "Configuration name cannot be empty.", variant: "destructive" });
              return;
         }
@@ -478,6 +491,7 @@ export default function Home() {
     };
 
      const duplicateConfigurationSet = (setId: string) => {
+         if (!isAdmin) return;
         const setToDuplicate = verificationSets.find(set => set.id === setId);
         if (!setToDuplicate) return;
 
@@ -502,9 +516,10 @@ export default function Home() {
     };
 
 
-    // --- Import/Export Functionality ---
+    // --- Import/Export Functionality (Admin Only) ---
 
     const handleExport = () => {
+        if (!isAdmin) return;
         if (verificationSets.length === 0) {
             toast({ title: "Info", description: "No configurations to export.", variant: "default" });
             return;
@@ -523,6 +538,7 @@ export default function Home() {
     };
 
     const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        if (!isAdmin) return;
         const file = event.target.files?.[0];
         if (!file) return;
 
@@ -586,6 +602,7 @@ export default function Home() {
     };
 
      const triggerFileInput = () => {
+         if (!isAdmin) return;
         fileInputRef.current?.click();
     };
 
@@ -596,42 +613,28 @@ export default function Home() {
   // Determine if Retry button should be enabled
   const canRetry = isReportVisible && !isRunning && stepsForReportCheck.some(s => s.status === 'failure' || s.status === 'warning');
 
-  // Render loading state or skeletons until client is mounted
-  if (!isClient) {
+
+  // Render loading state or skeletons until client and auth state are ready
+  if (!isClient || isAuthLoading) { // Check both client mount and auth loading
     return (
          <main className="container mx-auto p-4 md:p-8">
-             <Skeleton className="h-8 w-48 mb-6" /> {/* Title Skeleton */}
+             {/* Simplified Skeleton Layout */}
+             <Skeleton className="h-8 w-48 mb-6" />
              <div className="flex justify-end gap-2 mb-6">
-                 <Skeleton className="h-10 w-36" />
-                 <Skeleton className="h-10 w-36" />
-                 <Skeleton className="h-10 w-36" />
+                 <Skeleton className="h-10 w-24" />
+                 <Skeleton className="h-10 w-24" />
+                 {isAdmin && <Skeleton className="h-10 w-24" />} {/* Conditionally render skeleton */}
              </div>
              <Card className="mb-6">
                 <CardHeader>
                      <Skeleton className="h-6 w-1/3 mb-2" />
                 </CardHeader>
                 <CardContent className="space-y-4">
-                     <div className="flex flex-col sm:flex-row gap-2 items-end">
-                          <div className="flex-grow w-full sm:w-auto space-y-2">
-                               <Skeleton className="h-4 w-1/4" />
-                               <Skeleton className="h-10 w-full" />
-                          </div>
-                          <Skeleton className="h-10 w-full sm:w-32" />
-                     </div>
-                      <div className="flex flex-col sm:flex-row gap-2 items-end">
-                          <div className="flex-grow w-full sm:w-auto space-y-2">
-                               <Skeleton className="h-4 w-1/4" />
-                               <Skeleton className="h-10 w-full" />
-                          </div>
-                         <div className="flex gap-1 w-full sm:w-auto justify-end">
-                              <Skeleton className="h-10 w-10" />
-                              <Skeleton className="h-10 w-10" />
-                              <Skeleton className="h-10 w-10" />
-                         </div>
-                     </div>
+                     <Skeleton className="h-10 w-full" />
+                     <Skeleton className="h-10 w-full" />
                 </CardContent>
             </Card>
-             <Skeleton className="h-8 w-1/2 mb-6" /> {/* Current Config Skeleton */}
+             <Skeleton className="h-8 w-1/2 mb-6" />
              <div className="flex justify-end gap-2 mb-6">
                   <Skeleton className="h-10 w-36" />
                   <Skeleton className="h-10 w-24" />
@@ -659,147 +662,194 @@ export default function Home() {
     );
   }
 
+   // Handle case where user is not logged in (AuthProvider should redirect, but this is a safeguard)
+  if (!currentUser) {
+      return <div className="container mx-auto p-4 md:p-8 text-center">Redirecting to login...</div>; // Or a more specific loading/redirect message
+  }
+
 
   return (
     <main className="container mx-auto p-4 md:p-8">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-        <h1 className="text-3xl font-bold text-primary">VerifyNow</h1>
-          {/* Global Actions */}
-          <div className="flex gap-2 flex-wrap"> {/* Added flex-wrap */}
-            {/* Import/Export */}
-            <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleImport}
-                accept=".json"
-                style={{ display: 'none' }} // Hide the actual input
-                id="import-file-input"
-            />
-            <Button variant="outline" onClick={triggerFileInput}>
-                <Upload className="mr-2 h-4 w-4" /> Import Configs
-            </Button>
-            <Button variant="outline" onClick={handleExport} disabled={verificationSets.length === 0}>
-                <Download className="mr-2 h-4 w-4" /> Export Configs
-            </Button>
-             {/* Link to History Page */}
+       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+         <h1 className="text-3xl font-bold text-primary">VerifyNow</h1>
+         <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm text-muted-foreground">Welcome, {currentUser?.username} ({currentUser?.role})</span>
+            {/* Global Actions - Conditionally Render based on role */}
+             {isAdmin && (
+               <>
+                 <input
+                     type="file"
+                     ref={fileInputRef}
+                     onChange={handleImport}
+                     accept=".json"
+                     style={{ display: 'none' }} // Hide the actual input
+                     id="import-file-input"
+                 />
+                 <Button variant="outline" onClick={triggerFileInput} title="Import configurations (Admin only)">
+                     <Upload className="mr-2 h-4 w-4" /> Import
+                 </Button>
+                 <Button variant="outline" onClick={handleExport} disabled={verificationSets.length === 0} title="Export configurations (Admin only)">
+                     <Download className="mr-2 h-4 w-4" /> Export
+                 </Button>
+                 <Link href="/admin/users" passHref legacyBehavior>
+                    <Button variant="outline" title="Manage Users (Admin only)" asChild>
+                        <a><UserCog className="mr-2 h-4 w-4" /> Manage Users</a>
+                    </Button>
+                 </Link>
+               </>
+             )}
              <Link href="/history" passHref legacyBehavior>
                 <Button variant="outline" asChild>
-                    <a> {/* Use anchor tag for Link child */}
-                        <History className="mr-2 h-4 w-4" /> View History
-                    </a>
+                    <a><History className="mr-2 h-4 w-4" /> History</a>
                 </Button>
-            </Link>
+             </Link>
+             <Button variant="outline" onClick={logout} title="Logout">
+                 <LogOut className="mr-2 h-4 w-4" /> Logout
+             </Button>
          </div>
-      </div>
+       </div>
 
-        {/* Configuration Set Management */}
-        <Card className="mb-6">
-            <CardHeader>
-                 <CardTitle>Manage Configurations</CardTitle>
-                 <CardDescription>Create, select, edit, duplicate, or delete verification sets.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                 {/* Add New Set */}
-                 <div className="flex flex-col sm:flex-row gap-2 items-end">
-                      <div className="flex-grow w-full sm:w-auto">
-                        <Label htmlFor="new-config-name">New Configuration Name</Label>
-                        <Input
-                            id="new-config-name"
-                            value={newSetName}
-                            onChange={(e) => setNewSetName(e.target.value)}
-                            placeholder="e.g., Production Services"
-                        />
-                     </div>
-                    <Button onClick={addConfigurationSet} className="w-full sm:w-auto">
-                        <PlusCircle className="mr-2 h-4 w-4" /> Add New Set
-                    </Button>
-                 </div>
 
-                 {/* Select Active Set - Only render if there are sets */}
-                 {verificationSets.length > 0 ? (
+        {/* Configuration Set Management - Conditionally Render based on role */}
+         {isAdmin && (
+             <Card className="mb-6">
+                <CardHeader>
+                    <CardTitle>Manage Configurations</CardTitle>
+                    <CardDescription>Create, select, edit, duplicate, or delete verification sets.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {/* Add New Set */}
                     <div className="flex flex-col sm:flex-row gap-2 items-end">
                         <div className="flex-grow w-full sm:w-auto">
-                            <Label htmlFor="active-config-select">Active Configuration</Label>
-                             <Select value={activeSetId ?? ""} onValueChange={(id) => {
-                                 setActiveSetId(id);
-                                 setActiveTab('config'); // Switch to config tab
-                                }}>
-                                <SelectTrigger id="active-config-select" className="w-full">
-                                    <SelectValue placeholder="Select a configuration set" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {verificationSets.map(set => (
-                                    <SelectItem key={set.id} value={set.id}>
-                                        {set.name}
-                                    </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            <Label htmlFor="new-config-name">New Configuration Name</Label>
+                            <Input
+                                id="new-config-name"
+                                value={newSetName}
+                                onChange={(e) => setNewSetName(e.target.value)}
+                                placeholder="e.g., Production Services"
+                            />
                         </div>
-                       {activeSet && (
-                           <div className="flex gap-1 w-full sm:w-auto justify-end">
-                                {/* Edit Name */}
-                               <AlertDialog open={isEditingName} onOpenChange={setIsEditingName}>
-                                    <AlertDialogTrigger asChild>
-                                        <Button variant="ghost" size="icon" onClick={() => startEditingName(activeSet.id)} aria-label={`Edit name for ${activeSet.name}`}>
-                                             <Edit className="h-4 w-4" />
-                                        </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                        <AlertDialogTitle>Edit Configuration Name</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            Enter a new name for the configuration "{activeSet.name}".
-                                        </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <Input
-                                            value={editingSetName}
-                                            onChange={(e) => setEditingSetName(e.target.value)}
-                                            placeholder="New configuration name"
-                                            autoFocus
-                                            onKeyDown={(e) => { if (e.key === 'Enter') { saveEditedName(); setIsEditingName(false); }}}
-                                        />
-                                        <AlertDialogFooter>
-                                        <AlertDialogCancel onClick={() => setIsEditingName(false)}>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => { saveEditedName(); setIsEditingName(false); }}>Save</AlertDialogAction>
-                                        </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                </AlertDialog>
-                                {/* Duplicate */}
-                                <Button variant="ghost" size="icon" onClick={() => duplicateConfigurationSet(activeSet.id)} aria-label={`Duplicate ${activeSet.name}`}>
-                                    <Copy className="h-4 w-4" />
-                                </Button>
-                               {/* Delete */}
-                               <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                        {/* Disable delete if only one config set exists */}
-                                        <Button variant="ghost" size="icon" aria-label={`Delete ${activeSet.name}`} disabled={verificationSets.length <= 1}>
-                                            <Trash2 className="h-4 w-4 text-destructive" />
-                                        </Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                        <AlertDialogHeader>
-                                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            This action cannot be undone. This will permanently delete the configuration set "{activeSet.name}".
-                                        </AlertDialogDescription>
-                                        </AlertDialogHeader>
-                                        <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => deleteConfigurationSet(activeSet.id)} className="bg-destructive hover:bg-destructive/90">
-                                            Delete
-                                        </AlertDialogAction>
-                                        </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                </AlertDialog>
-                           </div>
-                       )}
+                        <Button onClick={addConfigurationSet} className="w-full sm:w-auto">
+                            <PlusCircle className="mr-2 h-4 w-4" /> Add New Set
+                        </Button>
                     </div>
-                 ) : (
-                      <p className="text-muted-foreground text-sm">No configurations found. Add a new set above or import configurations.</p>
-                 )}
-            </CardContent>
-        </Card>
+                    {/* Select Active Set - Common for all users */}
+                    {verificationSets.length > 0 ? (
+                         <div className="flex flex-col sm:flex-row gap-2 items-end">
+                             <div className="flex-grow w-full sm:w-auto">
+                                 <Label htmlFor="active-config-select">Active Configuration</Label>
+                                 <Select value={activeSetId ?? ""} onValueChange={(id) => {
+                                     setActiveSetId(id);
+                                     setActiveTab('config'); // Switch to config tab
+                                     setIsReportVisible(false); // Hide report when changing sets
+                                     }}>
+                                     <SelectTrigger id="active-config-select" className="w-full">
+                                         <SelectValue placeholder="Select a configuration set" />
+                                     </SelectTrigger>
+                                     <SelectContent>
+                                         {verificationSets.map(set => (
+                                         <SelectItem key={set.id} value={set.id}>
+                                             {set.name}
+                                         </SelectItem>
+                                         ))}
+                                     </SelectContent>
+                                 </Select>
+                             </div>
+                            {activeSet && isAdmin && ( // Admin-only actions
+                                <div className="flex gap-1 w-full sm:w-auto justify-end">
+                                    {/* Edit Name */}
+                                    <AlertDialog open={isEditingName} onOpenChange={setIsEditingName}>
+                                        <AlertDialogTrigger asChild>
+                                            <Button variant="ghost" size="icon" onClick={() => startEditingName(activeSet.id)} aria-label={`Edit name for ${activeSet.name}`}>
+                                                <Edit className="h-4 w-4" />
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                            <AlertDialogTitle>Edit Configuration Name</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                Enter a new name for the configuration "{activeSet.name}".
+                                            </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <Input
+                                                value={editingSetName}
+                                                onChange={(e) => setEditingSetName(e.target.value)}
+                                                placeholder="New configuration name"
+                                                autoFocus
+                                                onKeyDown={(e) => { if (e.key === 'Enter') { saveEditedName(); setIsEditingName(false); }}}
+                                            />
+                                            <AlertDialogFooter>
+                                            <AlertDialogCancel onClick={() => setIsEditingName(false)}>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={() => { saveEditedName(); setIsEditingName(false); }}>Save</AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                    {/* Duplicate */}
+                                    <Button variant="ghost" size="icon" onClick={() => duplicateConfigurationSet(activeSet.id)} aria-label={`Duplicate ${activeSet.name}`}>
+                                        <Copy className="h-4 w-4" />
+                                    </Button>
+                                {/* Delete */}
+                                <AlertDialog>
+                                        <AlertDialogTrigger asChild>
+                                            {/* Disable delete if only one config set exists */}
+                                            <Button variant="ghost" size="icon" aria-label={`Delete ${activeSet.name}`} disabled={verificationSets.length <= 1}>
+                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                            </Button>
+                                        </AlertDialogTrigger>
+                                        <AlertDialogContent>
+                                            <AlertDialogHeader>
+                                            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                This action cannot be undone. This will permanently delete the configuration set "{activeSet.name}".
+                                            </AlertDialogDescription>
+                                            </AlertDialogHeader>
+                                            <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction onClick={() => deleteConfigurationSet(activeSet.id)} className="bg-destructive hover:bg-destructive/90">
+                                                Delete
+                                            </AlertDialogAction>
+                                            </AlertDialogFooter>
+                                        </AlertDialogContent>
+                                    </AlertDialog>
+                                </div>
+                            )}
+                         </div>
+                    ) : (
+                         <p className="text-muted-foreground text-sm">No configurations found. {isAdmin ? "Add a new set above or import configurations." : "Ask an admin to add or import configurations."}</p>
+                    )}
+                </CardContent>
+            </Card>
+         )}
+
+        {/* Show simplified select if not admin and configs exist */}
+        {!isAdmin && verificationSets.length > 0 && (
+             <Card className="mb-6">
+                 <CardHeader>
+                    <CardTitle>Select Configuration</CardTitle>
+                 </CardHeader>
+                 <CardContent>
+                      <div className="flex-grow w-full sm:w-1/2">
+                         <Label htmlFor="active-config-select-user">Active Configuration</Label>
+                         <Select value={activeSetId ?? ""} onValueChange={(id) => {
+                             setActiveSetId(id);
+                             setActiveTab('config'); // Switch to config tab
+                             setIsReportVisible(false); // Hide report when changing sets
+                             }}>
+                             <SelectTrigger id="active-config-select-user" className="w-full">
+                                 <SelectValue placeholder="Select a configuration set" />
+                             </SelectTrigger>
+                             <SelectContent>
+                                 {verificationSets.map(set => (
+                                 <SelectItem key={set.id} value={set.id}>
+                                     {set.name}
+                                 </SelectItem>
+                                 ))}
+                             </SelectContent>
+                         </Select>
+                     </div>
+                 </CardContent>
+             </Card>
+        )}
 
 
        {/* Tabs for Config, Execution, Report */}
@@ -825,14 +875,16 @@ export default function Home() {
              </div>
           </div>
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-6">
-              <TabsTrigger value="config"><Settings className="mr-2 h-4 w-4 inline-block"/>Configure</TabsTrigger>
+             <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-3' : 'grid-cols-2'} mb-6`}>
+              {isAdmin && <TabsTrigger value="config"><Settings className="mr-2 h-4 w-4 inline-block"/>Configure</TabsTrigger>}
               <TabsTrigger value="execution"><Play className="mr-2 h-4 w-4 inline-block"/>Execute</TabsTrigger>
               <TabsTrigger value="report" disabled={isReportTabDisabled}><FileText className="mr-2 h-4 w-4 inline-block"/>Report</TabsTrigger>
             </TabsList>
-            <TabsContent value="config">
-              <VerificationConfig initialSteps={activeSet?.steps || []} onStepsChange={handleStepsChange} />
-            </TabsContent>
+            {isAdmin && (
+                 <TabsContent value="config">
+                  <VerificationConfig initialSteps={activeSet?.steps || []} onStepsChange={handleStepsChange} />
+                </TabsContent>
+            )}
             <TabsContent value="execution">
               <VerificationExecution steps={activeSet?.steps || []} isRunning={isRunning} />
             </TabsContent>
@@ -847,7 +899,7 @@ export default function Home() {
                     <CardContent className="pt-0">
                         <p className="text-muted-foreground">
                             {activeSet && activeSet.steps.length === 0
-                             ? "Add verification steps to this configuration first."
+                             ? "No verification steps in this configuration."
                              : "Run the verification process to generate the report."}
                         </p>
                          {!isRunning && stepsForReportCheck.length > 0 && stepsForReportCheck.every(s => s.status === 'pending') && (
@@ -869,7 +921,7 @@ export default function Home() {
                 </CardHeader>
                 <CardContent className="pt-0">
                     <p className="text-muted-foreground">
-                       Please add a new configuration or select an existing one above to begin.
+                       { isAdmin ? "Please add or select a configuration to begin." : "Please select a configuration to begin."}
                     </p>
                 </CardContent>
             </Card>

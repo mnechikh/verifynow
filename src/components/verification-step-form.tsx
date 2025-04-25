@@ -1,3 +1,4 @@
+
 "use client";
 
 import type * as React from 'react';
@@ -53,12 +54,14 @@ interface VerificationStepFormProps {
   onSubmit: (data: Omit<VerificationStep, 'id' | 'status'>) => void;
   initialData?: Partial<VerificationStepFormValues>;
   buttonText?: string;
+  disabled?: boolean; // Added disabled prop
 }
 
 export function VerificationStepForm({
   onSubmit,
   initialData,
-  buttonText = "Add Step"
+  buttonText = "Add Step",
+  disabled = false, // Default to not disabled
 }: VerificationStepFormProps) {
 
    const defaultValues: Partial<VerificationStepFormValues> = initialData ? {
@@ -80,13 +83,14 @@ export function VerificationStepForm({
   const form = useForm<VerificationStepFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: defaultValues,
+    disabled: disabled, // Pass disabled state to the form
   });
 
   const selectedType = form.watch("type");
 
   // Reset fields when type changes, but preserve existing values if editing
     useEffect(() => {
-        if (!initialData) { // Only reset fully if it's a *new* step form
+        if (!initialData && !disabled) { // Only reset fully if it's a *new* step form and not disabled
             if (selectedType === 'criteria') {
                 form.resetField("apiUrl");
                 form.resetField("apiKeyPath");
@@ -96,10 +100,12 @@ export function VerificationStepForm({
                 form.resetField("criteria");
             }
         }
-    }, [selectedType, form, initialData]);
+    }, [selectedType, form, initialData, disabled]);
 
 
   const handleFormSubmit = (values: VerificationStepFormValues) => {
+     if (disabled) return; // Prevent submission if disabled
+
      let submitData: Omit<CriteriaVerificationStep | ApiVerificationStep, 'id' | 'status'>;
 
     if (values.type === 'criteria') {
@@ -140,161 +146,164 @@ export function VerificationStepForm({
   return (
     // Use a Card only if it's not an editing form, otherwise just the form fields
      <Form {...form}>
-      <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4 border p-4 rounded-md bg-muted/20">
-           <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                  <FormItem>
-                  <FormLabel>Step Name</FormLabel>
-                  <FormControl>
-                      <Input placeholder="e.g., Check API Health" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                  </FormItem>
-              )}
-          />
-          <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                  <FormItem>
-                  <FormLabel>Description (Optional)</FormLabel>
-                  <FormControl>
-                      <Textarea placeholder="Describe what this step verifies" {...field} value={field.value ?? ''} />
-                  </FormControl>
-                  <FormMessage />
-                  </FormItem>
-              )}
-          />
-
-           <FormField
-              control={form.control}
-              name="type"
-              render={({ field }) => (
-                  <FormItem className="space-y-3">
-                  <FormLabel>Verification Type</FormLabel>
-                   <FormControl>
-                      <RadioGroup
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                      className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4"
-                      >
-                      <FormItem className="flex items-center space-x-3 space-y-0">
-                          <FormControl>
-                          <RadioGroupItem value="criteria" />
-                          </FormControl>
-                          <FormLabel className="font-normal">Text Criteria</FormLabel>
-                      </FormItem>
-                      <FormItem className="flex items-center space-x-3 space-y-0">
-                          <FormControl>
-                          <RadioGroupItem value="api" />
-                          </FormControl>
-                          <FormLabel className="font-normal">API Check</FormLabel>
-                      </FormItem>
-                      </RadioGroup>
-                  </FormControl>
-                  <FormMessage />
-                  </FormItem>
-              )}
-           />
-
-
-          {/* Conditional Fields */}
-          {selectedType === 'criteria' && (
+       <fieldset disabled={disabled} className="space-y-4 border p-4 rounded-md bg-muted/20 disabled:opacity-70 disabled:cursor-not-allowed">
+          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4">
               <FormField
                   control={form.control}
-                  name="criteria"
+                  name="name"
                   render={({ field }) => (
                       <FormItem>
-                      <FormLabel>Validation Criteria</FormLabel>
+                      <FormLabel>Step Name</FormLabel>
                       <FormControl>
-                          <Textarea placeholder="e.g., Python >= 3.8 OR Expected output text" {...field} value={field.value ?? ''}/>
+                          <Input placeholder="e.g., Check API Health" {...field} />
                       </FormControl>
-                       <FormDescription>
-                          Text or criteria expected from a command output or log file.
-                      </FormDescription>
                       <FormMessage />
                       </FormItem>
                   )}
               />
-          )}
+              <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                      <FormItem>
+                      <FormLabel>Description (Optional)</FormLabel>
+                      <FormControl>
+                          <Textarea placeholder="Describe what this step verifies" {...field} value={field.value ?? ''} />
+                      </FormControl>
+                      <FormMessage />
+                      </FormItem>
+                  )}
+              />
 
-          {selectedType === 'api' && (
-              <div className="space-y-4 p-4 border rounded-md bg-card shadow-sm">
-                   <FormField
+              <FormField
+                  control={form.control}
+                  name="type"
+                  render={({ field }) => (
+                      <FormItem className="space-y-3">
+                      <FormLabel>Verification Type</FormLabel>
+                      <FormControl>
+                          <RadioGroup
+                          onValueChange={field.onChange}
+                          defaultValue={field.value}
+                          className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4"
+                          >
+                          <FormItem className="flex items-center space-x-3 space-y-0">
+                              <FormControl>
+                              <RadioGroupItem value="criteria" />
+                              </FormControl>
+                              <FormLabel className="font-normal">Text Criteria</FormLabel>
+                          </FormItem>
+                          <FormItem className="flex items-center space-x-3 space-y-0">
+                              <FormControl>
+                              <RadioGroupItem value="api" />
+                              </FormControl>
+                              <FormLabel className="font-normal">API Check</FormLabel>
+                          </FormItem>
+                          </RadioGroup>
+                      </FormControl>
+                      <FormMessage />
+                      </FormItem>
+                  )}
+              />
+
+
+              {/* Conditional Fields */}
+              {selectedType === 'criteria' && (
+                  <FormField
                       control={form.control}
-                      name="apiUrl"
+                      name="criteria"
                       render={({ field }) => (
                           <FormItem>
-                          <FormLabel>API URL</FormLabel>
+                          <FormLabel>Validation Criteria</FormLabel>
                           <FormControl>
-                              <Input placeholder="https://api.example.com/health" {...field} value={field.value ?? ''}/>
+                              <Textarea placeholder="e.g., Python >= 3.8 OR Expected output text" {...field} value={field.value ?? ''}/>
                           </FormControl>
-                           <FormDescription>
-                              The full URL of the API endpoint to check.
+                          <FormDescription>
+                              Text or criteria expected from a command output or log file.
                           </FormDescription>
                           <FormMessage />
                           </FormItem>
                       )}
                   />
-                   <FormField
-                      control={form.control}
-                      name="apiKeyPath"
-                      render={({ field }) => (
-                          <FormItem>
-                          <FormLabel>Response Key Path</FormLabel>
-                          <FormControl>
-                              <Input placeholder="e.g., data.status or user[0].active" {...field} value={field.value ?? ''}/>
-                          </FormControl>
-                           <FormDescription>
-                              Dot notation path to the value in the JSON response (e.g., `data.items[0].name`).
-                          </FormDescription>
-                           <FormMessage />
-                          </FormItem>
-                      )}
-                  />
-                   <FormField
-                      control={form.control}
-                      name="expectedValue"
-                      render={({ field }) => (
-                          <FormItem>
-                          <FormLabel>Expected Value</FormLabel>
-                          <FormControl>
-                              <Input placeholder="e.g., 'OK' or 'true' or '123'" {...field} value={field.value ?? ''}/>
-                          </FormControl>
-                            <FormDescription>
-                              The exact string value expected at the specified key path.
-                          </FormDescription>
-                           <FormMessage />
-                          </FormItem>
-                      )}
-                  />
-                   <FormField
-                      control={form.control}
-                      name="apiToken"
-                      render={({ field }) => (
-                          <FormItem>
-                          <FormLabel>API Token (Optional)</FormLabel>
-                          <FormControl>
-                              <Input type="password" placeholder="Enter API token (e.g., Bearer Token)" {...field} value={field.value ?? ''} />
-                          </FormControl>
-                           <FormDescription>
-                              Authentication token if required by the API (will be sent in Authorization header). Leave blank if none.
-                          </FormDescription>
-                          <FormMessage />
-                          </FormItem>
-                      )}
-                  />
-              </div>
-          )}
+              )}
+
+              {selectedType === 'api' && (
+                  <div className="space-y-4 p-4 border rounded-md bg-card shadow-sm">
+                      <FormField
+                          control={form.control}
+                          name="apiUrl"
+                          render={({ field }) => (
+                              <FormItem>
+                              <FormLabel>API URL</FormLabel>
+                              <FormControl>
+                                  <Input placeholder="https://api.example.com/health" {...field} value={field.value ?? ''}/>
+                              </FormControl>
+                              <FormDescription>
+                                  The full URL of the API endpoint to check.
+                              </FormDescription>
+                              <FormMessage />
+                              </FormItem>
+                          )}
+                      />
+                      <FormField
+                          control={form.control}
+                          name="apiKeyPath"
+                          render={({ field }) => (
+                              <FormItem>
+                              <FormLabel>Response Key Path</FormLabel>
+                              <FormControl>
+                                  <Input placeholder="e.g., data.status or user[0].active" {...field} value={field.value ?? ''}/>
+                              </FormControl>
+                              <FormDescription>
+                                  Dot notation path to the value in the JSON response (e.g., `data.items[0].name`).
+                              </FormDescription>
+                              <FormMessage />
+                              </FormItem>
+                          )}
+                      />
+                      <FormField
+                          control={form.control}
+                          name="expectedValue"
+                          render={({ field }) => (
+                              <FormItem>
+                              <FormLabel>Expected Value</FormLabel>
+                              <FormControl>
+                                  <Input placeholder="e.g., 'OK' or 'true' or '123'" {...field} value={field.value ?? ''}/>
+                              </FormControl>
+                                <FormDescription>
+                                  The exact string value expected at the specified key path.
+                              </FormDescription>
+                              <FormMessage />
+                              </FormItem>
+                          )}
+                      />
+                      <FormField
+                          control={form.control}
+                          name="apiToken"
+                          render={({ field }) => (
+                              <FormItem>
+                              <FormLabel>API Token (Optional)</FormLabel>
+                              <FormControl>
+                                  <Input type="password" placeholder="Enter API token (e.g., Bearer Token)" {...field} value={field.value ?? ''} />
+                              </FormControl>
+                              <FormDescription>
+                                  Authentication token if required by the API (will be sent in Authorization header). Leave blank if none.
+                              </FormDescription>
+                              <FormMessage />
+                              </FormItem>
+                          )}
+                      />
+                  </div>
+              )}
 
 
-          <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground">
-              {buttonText}
-          </Button>
-      </form>
+              <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground" disabled={disabled}>
+                  {buttonText}
+              </Button>
+          </form>
+       </fieldset>
     </Form>
 
   );
 }
+
