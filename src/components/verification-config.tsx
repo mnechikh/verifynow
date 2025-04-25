@@ -1,7 +1,7 @@
 "use client";
 
 import type * as React from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Import useEffect
 import type { VerificationStep, CriteriaVerificationStep, ApiVerificationStep } from '@/types/verification';
 import { VerificationStepForm } from './verification-step-form';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,12 @@ interface VerificationConfigProps {
 export function VerificationConfig({ initialSteps, onStepsChange }: VerificationConfigProps) {
   const [steps, setSteps] = useState<VerificationStep[]>(initialSteps);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
+
+  // Effect to update internal state when the active configuration changes
+  useEffect(() => {
+    setSteps(initialSteps);
+    setEditingStepId(null); // Reset editing state when config set changes
+  }, [initialSteps]);
 
   const addStep = (newStepData: Omit<VerificationStep, 'id' | 'status'>) => {
     const newStep: VerificationStep = {
@@ -96,20 +102,20 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
                 <ul className="space-y-4 mb-6">
                     {steps.map((step) => (
                     <li key={step.id} className="border p-4 rounded-md shadow-sm flex justify-between items-start bg-card">
-                        <div className="flex-grow space-y-1 break-words overflow-hidden"> {/* Added break-words and overflow-hidden */}
-                            <div className="flex items-center space-x-2 flex-wrap"> {/* Added flex-wrap */}
-                                <h3 className="font-semibold">{step.name}</h3>
+                        <div className="flex-grow space-y-1 break-words overflow-hidden mr-2"> {/* Added break-words and overflow-hidden, margin right */}
+                            <div className="flex items-center space-x-2 flex-wrap gap-y-1"> {/* Added flex-wrap and gap-y */}
+                                <h3 className="font-semibold text-base break-all">{step.name}</h3> {/* Added text-base and break-all */}
                                 <Badge variant="outline" className="capitalize shrink-0"> {/* Added shrink-0 */}
                                     {step.type === 'criteria' ? <FileText className="h-3 w-3 mr-1"/> : <LinkIcon className="h-3 w-3 mr-1"/>}
                                     {step.type}
                                 </Badge>
                             </div>
-                            {step.description && <p className="text-sm text-muted-foreground">{step.description}</p>}
+                            {step.description && <p className="text-sm text-muted-foreground break-words">{step.description}</p>}
                             {step.type === 'criteria' && (
-                                <p className="text-sm"><span className="font-medium">Criteria:</span> {step.criteria}</p>
+                                <p className="text-sm break-words"><span className="font-medium">Criteria:</span> {step.criteria}</p>
                             )}
                              {step.type === 'api' && (
-                                <div className="text-sm space-y-0.5">
+                                <div className="text-sm space-y-0.5 break-words">
                                     <p><span className="font-medium">API URL:</span> {step.apiUrl}</p>
                                     <p><span className="font-medium">Key Path:</span> {step.apiKeyPath}</p>
                                     <p><span className="font-medium">Expected Value:</span> {step.expectedValue}</p>
@@ -138,6 +144,7 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
 
            {editingStepId && editingStep ? (
                 <div className='mt-4 space-y-2'>
+                    <h4 className="font-semibold text-lg mb-2">Editing Step: {editingStep.name}</h4>
                     <VerificationStepForm
                         key={editingStepId} // Force re-render on edit change
                         onSubmit={updateStep}
@@ -148,6 +155,10 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
                 </div>
             ) : (
                  <VerificationStepForm onSubmit={addStep} />
+            )}
+
+             {steps.length === 0 && !editingStepId && (
+                <p className="text-muted-foreground text-center py-4">No steps defined for this configuration. Add a step below.</p>
             )}
 
         </CardContent>
