@@ -2,11 +2,12 @@
 
 import type * as React from 'react';
 import { useState } from 'react';
-import type { VerificationStep } from '@/types/verification';
+import type { VerificationStep, CriteriaVerificationStep, ApiVerificationStep } from '@/types/verification';
 import { VerificationStepForm } from './verification-step-form';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Trash2, Edit } from 'lucide-react';
+import { Trash2, Edit, FileText, Link as LinkIcon } from 'lucide-react'; // Added LinkIcon
+import { Badge } from "@/components/ui/badge"; // Added Badge
 
 interface VerificationConfigProps {
   initialSteps: VerificationStep[];
@@ -32,6 +33,10 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
     const updatedSteps = steps.filter(step => step.id !== id);
     setSteps(updatedSteps);
     onStepsChange(updatedSteps);
+     // If deleting the step being edited, exit editing mode
+    if (editingStepId === id) {
+      setEditingStepId(null);
+    }
   };
 
    const startEditing = (id: string) => {
@@ -54,24 +59,63 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
 
   const editingStep = steps.find(step => step.id === editingStepId);
 
+  // Prepare initialData for the form based on the step being edited
+   const getInitialFormData = (): Partial<VerificationStep> | undefined => {
+    if (!editingStep) return undefined;
+
+    const baseData = {
+        id: editingStep.id,
+        name: editingStep.name,
+        description: editingStep.description,
+        type: editingStep.type,
+    };
+
+    if (editingStep.type === 'criteria') {
+        return { ...baseData, criteria: editingStep.criteria };
+    } else if (editingStep.type === 'api') {
+        return {
+            ...baseData,
+            apiUrl: editingStep.apiUrl,
+            apiKeyPath: editingStep.apiKeyPath,
+            expectedValue: editingStep.expectedValue
+        };
+    }
+    return baseData; // Should not happen with defined types
+  };
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>Configure Verification Steps</CardTitle>
-          <CardDescription>Define the steps needed to verify the installation.</CardDescription>
+          <CardDescription>Define the steps needed to verify the installation using text criteria or API checks.</CardDescription>
         </CardHeader>
         <CardContent>
             {steps.length > 0 && (
                 <ul className="space-y-4 mb-6">
                     {steps.map((step) => (
                     <li key={step.id} className="border p-4 rounded-md shadow-sm flex justify-between items-start bg-card">
-                        <div>
-                            <h3 className="font-semibold">{step.name}</h3>
-                            {step.description && <p className="text-sm text-muted-foreground mt-1">{step.description}</p>}
-                            <p className="text-sm mt-1"><span className="font-medium">Criteria:</span> {step.criteria}</p>
+                        <div className="flex-grow space-y-1">
+                            <div className="flex items-center space-x-2">
+                                <h3 className="font-semibold">{step.name}</h3>
+                                <Badge variant="outline" className="capitalize">
+                                    {step.type === 'criteria' ? <FileText className="h-3 w-3 mr-1"/> : <LinkIcon className="h-3 w-3 mr-1"/>}
+                                    {step.type}
+                                </Badge>
+                            </div>
+                            {step.description && <p className="text-sm text-muted-foreground">{step.description}</p>}
+                            {step.type === 'criteria' && (
+                                <p className="text-sm"><span className="font-medium">Criteria:</span> {step.criteria}</p>
+                            )}
+                             {step.type === 'api' && (
+                                <div className="text-sm space-y-0.5">
+                                    <p><span className="font-medium">API URL:</span> {step.apiUrl}</p>
+                                    <p><span className="font-medium">Key Path:</span> {step.apiKeyPath}</p>
+                                    <p><span className="font-medium">Expected Value:</span> {step.expectedValue}</p>
+                                </div>
+                            )}
                         </div>
-                        <div className="flex space-x-2 shrink-0 ml-4">
+                        <div className="flex space-x-1 shrink-0 ml-4">
                             <Button variant="ghost" size="icon" onClick={() => startEditing(step.id)} aria-label={`Edit ${step.name}`}>
                                 <Edit className="h-4 w-4" />
                             </Button>
@@ -85,17 +129,17 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
             )}
 
            {editingStepId && editingStep ? (
-                <div className='mt-4'>
+                <div className='mt-4 space-y-2'>
                     <VerificationStepForm
                         key={editingStepId} // Force re-render on edit change
                         onSubmit={updateStep}
-                        initialData={{ name: editingStep.name, description: editingStep.description, criteria: editingStep.criteria }}
+                        initialData={getInitialFormData()}
                         buttonText="Update Step"
                     />
                     <Button variant="outline" onClick={cancelEditing} className="mt-2">Cancel Edit</Button>
                 </div>
             ) : (
-                <VerificationStepForm onSubmit={addStep} />
+                 <VerificationStepForm onSubmit={addStep} />
             )}
 
         </CardContent>

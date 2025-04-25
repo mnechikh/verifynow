@@ -7,19 +7,26 @@ import { VerificationExecution } from '@/components/verification-execution';
 import { VerificationReport } from '@/components/verification-report';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent } from "@/components/ui/card"; // Added import
-import type { VerificationStep, VerificationStatus } from '@/types/verification';
-import { Play, Settings, FileText, RotateCcw, Loader2 } from 'lucide-react'; // Ensure Loader2 is imported
+import { Card, CardContent } from "@/components/ui/card";
+import type { VerificationStep, VerificationStatus, CriteriaVerificationStep, ApiVerificationStep } from '@/types/verification';
+import { Play, Settings, FileText, RotateCcw, Loader2 } from 'lucide-react';
+
+// Utility function to get value from nested object using dot notation path
+const getValueFromPath = (obj: any, path: string): any => {
+  return path.split(/[.[\]]+/).filter(Boolean).reduce((acc, part) => acc && acc[part], obj);
+};
 
 // Mock function to simulate step execution
-const simulateStepExecution = (step: VerificationStep): Promise<Partial<VerificationStep>> => {
-  return new Promise(resolve => {
+const simulateStepExecution = async (step: VerificationStep): Promise<Partial<VerificationStep>> => {
+  return new Promise(async (resolve) => {
     const duration = Math.random() * 1500 + 500; // Simulate 0.5 to 2 seconds execution time
-    setTimeout(() => {
-      const randomOutcome = Math.random();
-      let status: VerificationStatus = 'success';
-      let resultMessage = 'Verified successfully.';
+    await new Promise(res => setTimeout(res, duration)); // Wait for simulated duration
 
+    let status: VerificationStatus = 'success';
+    let resultMessage = 'Verified successfully.';
+    const randomOutcome = Math.random();
+
+    if (step.type === 'criteria') {
       // Simulate failures and warnings based on criteria (simple simulation)
       if (step.criteria.toLowerCase().includes('fail') || randomOutcome < 0.15) {
           status = 'failure';
@@ -28,9 +35,71 @@ const simulateStepExecution = (step: VerificationStep): Promise<Partial<Verifica
           status = 'warning';
           resultMessage = 'Check completed with warnings.';
       }
+    } else if (step.type === 'api') {
+      try {
+        // Simulate API call - In a real app, replace this with fetch
+        const mockApiResponse = async () => {
+          // Simulate different responses based on URL or expected value for testing
+          if (step.apiUrl.includes('fail')) {
+             return { status: 'error', message: 'Simulated API failure' };
+          }
+          if (step.expectedValue.toLowerCase() === 'warn_me') {
+              return { data: { status: 'OK but with caveats' } }; // Simulate a warning case
+          }
+          // Simulate a successful response structure
+          let response: any = {};
+          let current = response;
+          const parts = step.apiKeyPath.split(/[.[\]]+/).filter(Boolean);
+          parts.forEach((part, index) => {
+              if (index === parts.length - 1) {
+                  current[part] = step.expectedValue; // Set the final part to the expected value for success
+              } else {
+                 // Handle array index notation
+                 const arrayMatch = part.match(/^(\w+)\[(\d+)\]$/);
+                 if (arrayMatch) {
+                     const arrayName = arrayMatch[1];
+                     const indexNum = parseInt(arrayMatch[2], 10);
+                     if (!current[arrayName]) current[arrayName] = [];
+                     while(current[arrayName].length <= indexNum) {
+                        current[arrayName].push({});
+                     }
+                      current = current[arrayName][indexNum];
+                 } else {
+                     current[part] = {};
+                     current = current[part];
+                 }
+              }
+          });
+          return response;
+        };
 
-      resolve({ status, resultMessage });
-    }, duration);
+        const response = await mockApiResponse();
+        const actualValue = getValueFromPath(response, step.apiKeyPath);
+
+        if (actualValue === undefined) {
+          status = 'failure';
+          resultMessage = `API check failed: Key path "${step.apiKeyPath}" not found in response.`;
+        } else if (String(actualValue) === step.expectedValue) {
+          status = 'success';
+          resultMessage = `API check successful. Value at "${step.apiKeyPath}" matched "${step.expectedValue}".`;
+           // Simulate a warning even on success based on a condition
+          if (step.expectedValue.toLowerCase() === 'warn_me' || randomOutcome < 0.2) {
+             status = 'warning';
+             resultMessage = `API check warning: Value matched, but potential issue detected. (${String(actualValue)})`;
+          }
+        } else {
+          status = 'failure';
+          resultMessage = `API check failed: Expected "${step.expectedValue}" at "${step.apiKeyPath}", but got "${String(actualValue)}".`;
+        }
+
+      } catch (error) {
+        console.error("API Step Simulation Error:", error);
+        status = 'failure';
+        resultMessage = `API check failed: Error during simulated API call.`;
+      }
+    }
+
+    resolve({ status, resultMessage });
   });
 };
 
@@ -46,6 +115,7 @@ export default function Home() {
     // Reset report and status if configuration changes
     setIsReportVisible(false);
      setSteps(prevSteps => prevSteps.map(s => ({ ...s, status: 'pending', resultMessage: undefined })));
+     setActiveTab("config"); // Stay on config tab after changes
   };
 
   const runVerification = useCallback(async () => {
@@ -94,6 +164,9 @@ export default function Home() {
     setActiveTab("config");
   };
 
+  // Determine if report tab should be disabled
+  const isReportTabDisabled = steps.length === 0 || (!isReportVisible && !isRunning && steps.every(s => s.status === 'pending'));
+
   return (
     <main className="container mx-auto p-4 md:p-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
@@ -114,7 +187,7 @@ export default function Home() {
         <TabsList className="grid w-full grid-cols-3 mb-6">
           <TabsTrigger value="config"><Settings className="mr-2 h-4 w-4 inline-block"/>Configure</TabsTrigger>
           <TabsTrigger value="execution"><Play className="mr-2 h-4 w-4 inline-block"/>Execute</TabsTrigger>
-          <TabsTrigger value="report" disabled={!isReportVisible && !isRunning && steps.every(s => s.status === 'pending')}><FileText className="mr-2 h-4 w-4 inline-block"/>Report</TabsTrigger>
+          <TabsTrigger value="report" disabled={isReportTabDisabled}><FileText className="mr-2 h-4 w-4 inline-block"/>Report</TabsTrigger>
         </TabsList>
         <TabsContent value="config">
           <VerificationConfig initialSteps={steps} onStepsChange={handleStepsChange} />
@@ -127,8 +200,12 @@ export default function Home() {
             <VerificationReport steps={steps} />
           ) : (
              <Card className="text-center py-10">
-                <CardContent>
-                    <p className="text-muted-foreground">Run the verification process to generate the report.</p>
+                <CardContent className="pt-6"> {/* Added pt-6 to align with Card standard */}
+                    <p className="text-muted-foreground">
+                        {steps.length === 0
+                         ? "Configure verification steps first."
+                         : "Run the verification process to generate the report."}
+                    </p>
                 </CardContent>
             </Card>
           )}

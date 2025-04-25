@@ -1,10 +1,30 @@
 export type VerificationStatus = 'pending' | 'running' | 'success' | 'failure' | 'warning';
 
-export interface VerificationStep {
+export type StepType = 'criteria' | 'api';
+
+// Base interface for common properties
+interface VerificationStepBase {
   id: string;
   name: string;
   description: string;
-  criteria: string; // Simple text criteria for now
   status: VerificationStatus;
   resultMessage?: string; // Optional message detailing success/failure/warning
 }
+
+// Interface for steps validated by simple text criteria
+export interface CriteriaVerificationStep extends VerificationStepBase {
+  type: 'criteria';
+  criteria: string;
+}
+
+// Interface for steps validated by an API call
+export interface ApiVerificationStep extends VerificationStepBase {
+  type: 'api';
+  apiUrl: string;
+  apiKeyPath: string; // e.g., "data.status" or "user.id"
+  expectedValue: string; // Value to check against the key path
+  // Optional: Add method, headers, body later if needed
+}
+
+// Union type for any verification step
+export type VerificationStep = CriteriaVerificationStep | ApiVerificationStep;
