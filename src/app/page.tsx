@@ -592,6 +592,7 @@ export default function Home() {
                                {/* Delete */}
                                <AlertDialog>
                                     <AlertDialogTrigger asChild>
+                                        {/* Disable delete if only one config set exists */}
                                         <Button variant="ghost" size="icon" aria-label={`Delete ${activeSet.name}`} disabled={verificationSets.length <= 1}>
                                             <Trash2 className="h-4 w-4 text-destructive" />
                                         </Button>
@@ -679,3 +680,5 @@ export default function Home() {
     </main>
   );
 }
+
+    
