@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react';
+import * as React from 'react'; // Import React
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import type { User, Role } from '@/types/user';
 import { useRouter, usePathname } from 'next/navigation';
@@ -17,6 +18,7 @@ interface AuthContextType {
   isLoading: boolean; // Indicates if auth state is being determined
 }
 
+// Ensure AuthContext is defined correctly
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Initial default admin user if no users exist in local storage
@@ -43,9 +45,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.log("Initialized with default admin user.");
         }
         // Finish loading once users are checked/initialized
-        setIsLoading(false);
+        // Use setTimeout to ensure state updates related to localStorage are settled
+        setTimeout(() => setIsLoading(false), 0);
     }
-   }, [setUsers]); // Run only once on mount
+   }, [setUsers]);
 
 
   // Redirect logic based on auth state and current path
@@ -117,7 +120,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    }, [currentUser]);
 
 
-  const value: AuthContextType = {
+  // Explicitly define the context value object
+  const contextValue: AuthContextType = {
     currentUser,
     login,
     logout,
@@ -128,13 +132,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
   };
 
-  // Return the provider wrapping the children
-  // Ensure the JSX syntax is correct here. It seems standard.
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
+  // Return the provider wrapping the children, using the defined contextValue
+  // Re-writing the return statement to ensure standard JSX parsing.
+  const providerElement = React.createElement(
+    AuthContext.Provider,
+    { value: contextValue },
+    children
   );
+  return providerElement;
+
 }
 
 export const useAuth = (): AuthContextType => {
@@ -144,3 +150,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
