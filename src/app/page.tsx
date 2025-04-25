@@ -371,23 +371,22 @@ export default function Home() {
     setActiveTab("report"); // Switch to report tab when done
 
     // Log the execution AFTER updating the final state
-    const finalActiveSet = verificationSets.find(set => set.id === activeSetId);
-    if (finalActiveSet) {
-        // Need to use the updated set from state after the loop completes
-        // Use a temporary variable to get the final state inside this callback scope
-        let finalSetForLogging: VerificationSet | undefined;
-        setVerificationSets(prevSets => {
-            finalSetForLogging = prevSets.find(set => set.id === activeSetId);
-            return prevSets; // Return the same state, just using the setter to get the latest value
-        });
+    // Need to use the updated set from state after the loop completes
+    // Use a temporary variable to get the final state inside this callback scope
+    let finalSetForLogging: VerificationSet | undefined;
+    // This looks weird, but it's a way to get the *latest* state value synchronously
+    // within the callback after all async operations and state updates within the loop.
+    setVerificationSets(prevSets => {
+        finalSetForLogging = prevSets.find(set => set.id === activeSetId);
+        return prevSets; // Return the same state, just using the setter to get the latest value
+    });
 
-        if (finalSetForLogging) {
-            logExecution(finalSetForLogging, startTime, endTime);
-        }
+    if (finalSetForLogging) {
+        logExecution(finalSetForLogging, startTime, endTime);
     }
 
 
-  }, [activeSet, isRunning, activeSetId, setVerificationSets, logExecution, verificationSets]); // Added verificationSets dependency
+  }, [activeSet, isRunning, activeSetId, setVerificationSets, logExecution]); // Removed verificationSets from dependencies as it caused potential loops
 
 
    const resetVerification = () => {
