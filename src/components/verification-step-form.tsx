@@ -88,19 +88,44 @@ export function VerificationStepForm({
 
   const selectedType = form.watch("type");
 
-  // Reset fields when type changes, but preserve existing values if editing
-    useEffect(() => {
-        if (!initialData && !disabled) { // Only reset fully if it's a *new* step form and not disabled
-            if (selectedType === 'criteria') {
-                form.resetField("apiUrl");
-                form.resetField("apiKeyPath");
-                form.resetField("expectedValue");
-                form.resetField("apiToken");
-            } else if (selectedType === 'api') {
-                form.resetField("criteria");
-            }
-        }
-    }, [selectedType, form, initialData, disabled]);
+  // Effect to reset fields when type changes for a *new* form instance.
+  // Using form.reset is generally safer during render cycles than multiple resetField calls.
+  useEffect(() => {
+      // Only reset if it's a *new* step form (no initialData) and not disabled
+      if (!initialData && !disabled) {
+          // Get current values for fields to preserve
+          const currentName = form.getValues("name");
+          const currentDescription = form.getValues("description");
+
+          // Define the base reset object
+          const resetBase = {
+                name: currentName,
+                description: currentDescription,
+                // API fields set to default empty/undefined
+                apiUrl: "",
+                apiKeyPath: "",
+                expectedValue: "",
+                apiToken: "",
+                // Criteria field set to default empty/undefined
+                criteria: "",
+          }
+
+          if (selectedType === 'criteria') {
+              form.reset({
+                  ...resetBase,
+                  type: 'criteria',
+              }, { keepDefaultValues: false, keepValues: false }); // Ensure full reset based on new defaults
+          } else if (selectedType === 'api') {
+              form.reset({
+                  ...resetBase,
+                  type: 'api',
+              }, { keepDefaultValues: false, keepValues: false }); // Ensure full reset based on new defaults
+          }
+      }
+      // Only trigger this effect when the selectedType changes for a new form.
+      // Avoid including 'form' directly if it causes infinite loops, though it's usually needed.
+      // If issues persist, consider more granular control or alternative state management.
+  }, [selectedType, initialData, disabled, form.reset, form.getValues]);
 
 
   const handleFormSubmit = (values: VerificationStepFormValues) => {
@@ -306,4 +331,3 @@ export function VerificationStepForm({
 
   );
 }
-
