@@ -33,114 +33,148 @@ const simulateStepExecution = async (step: VerificationStep): Promise<Partial<Ve
     const duration = Math.random() * 1500 + 500; // Simulate 0.5 to 2 seconds execution time
     await new Promise(res => setTimeout(res, duration)); // Wait for simulated duration
 
-    let status: VerificationStatus = 'success';
-    let resultMessage = 'Verified successfully.';
+    let status: VerificationStatus = 'pending'; // Start as pending, will be updated
+    let resultMessage = ''; // Initialize empty message
     const randomOutcome = Math.random();
 
     if (step.type === 'criteria') {
-      // Simulate failures and warnings based on criteria (simple simulation)
-      if (step.criteria.toLowerCase().includes('fail') || randomOutcome < 0.15) {
+      // Simulate criteria check
+      const criteriaMet = !(step.criteria.toLowerCase().includes('fail') || randomOutcome < 0.15);
+      const hasWarning = step.criteria.toLowerCase().includes('warn') || randomOutcome < 0.3;
+
+      if (criteriaMet) {
+          if (hasWarning) {
+              status = 'warning';
+              resultMessage = `Criteria check completed with warnings. Criteria: "${step.criteria}"`;
+          } else {
+              status = 'success';
+              resultMessage = `Criteria verified successfully. Criteria: "${step.criteria}"`;
+          }
+      } else {
           status = 'failure';
-          resultMessage = 'Criteria check failed.';
-      } else if (step.criteria.toLowerCase().includes('warn') || randomOutcome < 0.3) {
-          status = 'warning';
-          resultMessage = 'Check completed with warnings.';
+          resultMessage = `Criteria check failed. Criteria: "${step.criteria}"`;
       }
     } else if (step.type === 'api') {
-      try {
-        // Simulate API call - In a real app, replace this with actual fetch
-        const mockApiResponse = async () => {
-            console.log(`Simulating API call to ${step.apiUrl} ${step.apiToken ? 'with' : 'without'} token.`);
-            // Simulate headers check (very basic)
-            // Example: If URL implies auth and token is bad or missing
-            if (step.apiUrl.includes('requires-auth') && (!step.apiToken || !step.apiToken.startsWith('Bearer valid'))) {
-                 console.warn(`Simulated Unauthorized for ${step.apiUrl}. Token: ${step.apiToken}`);
-                 return { status: 401, message: 'Simulated Unauthorized - Check API Token' };
-            }
-            if (step.apiUrl.includes('fail')) {
-                return { status: 500, message: 'Simulated API failure' };
-            }
-            if (step.expectedValue.toLowerCase() === 'warn_me') {
-                return { data: { status: 'OK but with caveats' } }; // Simulate a warning case
-            }
-             // Simulate a successful response structure based on path
-            let response: any = {};
-            let current = response;
-            const parts = step.apiKeyPath.split(/[.[\]]+/).filter(Boolean);
+        const requestInfo = `Request: GET ${step.apiUrl} (Token: ${step.apiToken ? 'Provided' : 'Not Provided'})`;
+        let responseData: any = null; // To store simulated response data for logging
+        let responseStatusInfo = ''; // To store status/error message
 
-            parts.forEach((part, index) => {
-                const isLastPart = index === parts.length - 1;
-                const arrayMatch = part.match(/^(\w+)\[(\d+)\]$/);
-
-                if (arrayMatch) {
-                    const arrayName = arrayMatch[1];
-                    const indexNum = parseInt(arrayMatch[2], 10);
-
-                    if (!current[arrayName]) {
-                        current[arrayName] = [];
-                    }
-                     // Ensure the array is long enough
-                    while (current[arrayName].length <= indexNum) {
-                        current[arrayName].push(isLastPart ? null : {}); // Use null for the last part's placeholder if it's the target index
-                    }
-
-                     if (isLastPart) {
-                        current[arrayName][indexNum] = step.expectedValue; // Set the final part to the expected value
-                    } else {
-                         if (typeof current[arrayName][indexNum] !== 'object' || current[arrayName][indexNum] === null) {
-                             current[arrayName][indexNum] = {}; // Ensure it's an object if not the last part
-                         }
-                        current = current[arrayName][indexNum];
-                    }
-                } else {
-                    // Handle regular object property
-                     if (isLastPart) {
-                        current[part] = step.expectedValue;
-                    } else {
-                        if (typeof current[part] !== 'object' || current[part] === null) {
-                             current[part] = {};
-                        }
-                        current = current[part];
-                    }
+        try {
+            // Simulate API call - In a real app, replace this with actual fetch
+            const mockApiResponse = async () => {
+                console.log(`Simulating API call to ${step.apiUrl} ${step.apiToken ? 'with' : 'without'} token.`);
+                // Simulate headers check (very basic)
+                if (step.apiUrl.includes('requires-auth') && (!step.apiToken || !step.apiToken.startsWith('Bearer valid'))) {
+                     console.warn(`Simulated Unauthorized for ${step.apiUrl}. Token: ${step.apiToken}`);
+                     return { status: 401, data: { message: 'Simulated Unauthorized - Check API Token' }};
                 }
-            });
-            return { data: response }; // Wrap response in data for getValueFromPath compatibility
-        };
+                if (step.apiUrl.includes('fail-request')) { // Simulate a network/500 error
+                    return { status: 500, data: { message: 'Simulated API failure' } };
+                }
+                // Simulate a successful response structure based on path
+                let response: any = {};
+                let current = response;
+                const parts = step.apiKeyPath.split(/[.[\]]+/).filter(Boolean);
 
-        const responseWrapper = await mockApiResponse();
+                parts.forEach((part, index) => {
+                    const isLastPart = index === parts.length - 1;
+                    const arrayMatch = part.match(/^(\w+)\[(\d+)\]$/);
 
-        // Check for simulated HTTP error status codes first
-        if (responseWrapper.status && responseWrapper.status >= 400) {
-             status = 'failure';
-             resultMessage = `API request failed: Status ${responseWrapper.status} - ${responseWrapper.message || 'Error'}`;
-        } else {
-            const responseData = responseWrapper.data; // Extract data if no error status
-            const actualValue = getValueFromPath(responseData, step.apiKeyPath);
+                    if (arrayMatch) {
+                        const arrayName = arrayMatch[1];
+                        const indexNum = parseInt(arrayMatch[2], 10);
+                        if (!current[arrayName]) current[arrayName] = [];
+                        while (current[arrayName].length <= indexNum) current[arrayName].push(isLastPart ? null : {});
+                        if (isLastPart) current[arrayName][indexNum] = step.expectedValue;
+                        else current = current[arrayName][indexNum] = (typeof current[arrayName][indexNum] === 'object' && current[arrayName][indexNum] !== null) ? current[arrayName][indexNum] : {};
+                    } else {
+                        if (isLastPart) current[part] = step.expectedValue;
+                        else current = current[part] = (typeof current[part] === 'object' && current[part] !== null) ? current[part] : {};
+                    }
+                });
 
-            if (actualValue === undefined) {
-            status = 'failure';
-            resultMessage = `API check failed: Key path "${step.apiKeyPath}" not found in response. Response: ${JSON.stringify(responseData)}`;
-            } else if (String(actualValue) === step.expectedValue) {
-            status = 'success';
-            resultMessage = `API check successful. Value at "${step.apiKeyPath}" matched "${step.expectedValue}".`;
-            // Simulate a warning even on success based on a condition
-            if (step.expectedValue.toLowerCase() === 'warn_me' || randomOutcome < 0.2) {
-                status = 'warning';
-                resultMessage = `API check warning: Value matched, but potential issue detected. (${String(actualValue)})`;
-            }
+                // Simulate a slightly different value for mismatch failure
+                if (step.apiUrl.includes('mismatch-value')) {
+                    let target = response;
+                    const mismatchParts = step.apiKeyPath.split(/[.[\]]+/).filter(Boolean);
+                    for (let i = 0; i < mismatchParts.length - 1; i++) {
+                        const part = mismatchParts[i];
+                        const arrayMatch = part.match(/^(\w+)\[(\d+)\]$/);
+                         if (arrayMatch) {
+                             target = target[arrayMatch[1]][parseInt(arrayMatch[2], 10)];
+                         } else {
+                             target = target[part];
+                         }
+                    }
+                     const lastPart = mismatchParts[mismatchParts.length - 1];
+                     const lastArrayMatch = lastPart.match(/^(\w+)\[(\d+)\]$/);
+                     if (lastArrayMatch) {
+                         target[lastArrayMatch[1]][parseInt(lastArrayMatch[2], 10)] = 'unexpected_value';
+                     } else {
+                         target[lastPart] = 'unexpected_value';
+                     }
+                }
+
+                // Simulate a scenario where the key path doesn't exist
+                if (step.apiUrl.includes('missing-key')) {
+                    response = { unrelatedData: 'some value' };
+                }
+
+                 // Simulate a warning condition even if value matches
+                 if (step.apiUrl.includes('issue-warning') || randomOutcome < 0.2) {
+                     return { status: 200, data: response, warning: 'Potential issue detected during API check.' };
+                 }
+
+
+                return { status: 200, data: response };
+            };
+
+            const responseWrapper = await mockApiResponse();
+            responseData = responseWrapper.data; // Store response data
+            responseStatusInfo = `Status: ${responseWrapper.status}`;
+
+            // Check for HTTP error status codes first
+            if (responseWrapper.status >= 400) {
+                 status = 'failure';
+                 resultMessage = `API request failed. ${responseStatusInfo} - ${responseData?.message || 'Error'}. ${requestInfo}. Response: ${JSON.stringify(responseData)}`;
             } else {
-            status = 'failure';
-            resultMessage = `API check failed: Expected "${step.expectedValue}" at "${step.apiKeyPath}", but got "${String(actualValue)}". Response: ${JSON.stringify(responseData)}`;
+                const actualValue = getValueFromPath({ data: responseData }, `data.${step.apiKeyPath}`); // Wrap data for consistent path finding
+
+                if (actualValue === undefined) {
+                    status = 'failure';
+                    resultMessage = `API check failed: Key path "${step.apiKeyPath}" not found. ${requestInfo}. Response: ${JSON.stringify(responseData)}`;
+                } else if (String(actualValue) === step.expectedValue) {
+                    // Value matches, check for explicit warning from response or random warning
+                     if (responseWrapper.warning || (step.expectedValue.toLowerCase() === 'warn_me' || randomOutcome < 0.2)) {
+                         status = 'warning';
+                         resultMessage = `API check warning: ${responseWrapper.warning || 'Potential issue detected.'} Value at "${step.apiKeyPath}" matched "${step.expectedValue}". ${requestInfo}. Response: ${JSON.stringify(responseData)}`;
+                     } else {
+                         status = 'success';
+                         resultMessage = `API check successful. Value at "${step.apiKeyPath}" matched "${step.expectedValue}". ${requestInfo}. Response: ${JSON.stringify(responseData)}`;
+                     }
+                } else {
+                    status = 'failure';
+                    resultMessage = `API check failed: Expected "${step.expectedValue}" at "${step.apiKeyPath}", but got "${String(actualValue)}". ${requestInfo}. Response: ${JSON.stringify(responseData)}`;
+                }
             }
+
+        } catch (error: any) {
+            console.error("API Step Simulation Error:", error);
+            status = 'failure';
+            responseStatusInfo = `Error: ${error.message || 'Exception during call'}`;
+            resultMessage = `API check failed: ${responseStatusInfo}. ${requestInfo}.`;
         }
-
-
-      } catch (error) {
-        console.error("API Step Simulation Error:", error);
-        status = 'failure';
-        resultMessage = `API check failed: Error during simulated API call. Check console for details.`;
-      }
+    } else {
+        status = 'failure'; // Should not happen with defined types
+        resultMessage = 'Unknown step type encountered.';
     }
+
+    // Limit result message length for display clarity if needed
+    // const MAX_MSG_LENGTH = 500;
+    // if (resultMessage.length > MAX_MSG_LENGTH) {
+    //     resultMessage = resultMessage.substring(0, MAX_MSG_LENGTH) + '... [truncated]';
+    // }
+
 
     resolve({ status, resultMessage });
   });
@@ -171,28 +205,27 @@ export default function Home() {
     // Reset statuses before running
     setSteps(prevSteps => prevSteps.map(s => ({ ...s, status: 'pending', resultMessage: undefined })));
 
-    for (let i = 0; i < steps.length; i++) {
-      const currentStepId = steps[i].id;
+    const updatedSteps = [...steps]; // Create a mutable copy
+
+    for (let i = 0; i < updatedSteps.length; i++) {
+      const currentStepId = updatedSteps[i].id;
 
       // Set current step to 'running'
-      setSteps(prevSteps => prevSteps.map(s =>
-        s.id === currentStepId ? { ...s, status: 'running' } : s
-      ));
+      updatedSteps[i] = { ...updatedSteps[i], status: 'running' };
+      setSteps([...updatedSteps]); // Update state to show 'running' status
 
       // Simulate execution
       try {
-        const result = await simulateStepExecution(steps[i]);
+        const result = await simulateStepExecution(updatedSteps[i]);
         // Update step with result
-        setSteps(prevSteps => prevSteps.map(s =>
-          s.id === currentStepId ? { ...s, ...result } : s
-        ));
+         updatedSteps[i] = { ...updatedSteps[i], ...result };
+
       } catch (error) {
          console.error("Error executing step:", error);
          // Mark step as failed on error
-         setSteps(prevSteps => prevSteps.map(s =>
-           s.id === currentStepId ? { ...s, status: 'failure', resultMessage: 'Execution error occurred.' } : s
-         ));
+         updatedSteps[i] = { ...updatedSteps[i], status: 'failure', resultMessage: `Execution error occurred: ${error instanceof Error ? error.message : String(error)}` };
       }
+      setSteps([...updatedSteps]); // Update state with the result of the current step
     }
 
     setIsRunning(false);
