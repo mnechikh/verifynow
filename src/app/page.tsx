@@ -3,6 +3,7 @@
 
 import type * as React from 'react';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link'; // Import Link for navigation
 import { VerificationConfig } from '@/components/verification-config';
 import { VerificationExecution } from '@/components/verification-execution';
 import { VerificationReport } from '@/components/verification-report';
@@ -14,9 +15,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { useLocalStorage } from '@/hooks/use-local-storage'; // Import useLocalStorage hook
-import type { VerificationStep, VerificationStatus, CriteriaVerificationStep, ApiVerificationStep, VerificationSet } from '@/types/verification';
-import { Play, Settings, FileText, RotateCcw, Loader2, Upload, Download, PlusCircle, Trash2, Edit, Copy, RefreshCcw } from 'lucide-react'; // Added RefreshCcw for Retry
+import { useLocalStorage } from '@/hooks/use-local-storage';
+import type { VerificationStep, VerificationStatus, CriteriaVerificationStep, ApiVerificationStep, VerificationSet, ExecutionLogEntry } from '@/types/verification';
+import { Play, Settings, FileText, RotateCcw, Loader2, Upload, Download, PlusCircle, Trash2, Edit, Copy, RefreshCcw, History } from 'lucide-react'; // Added History icon
 
 
 // --- Helper Functions ---
@@ -179,7 +180,7 @@ const simulateStepExecution = async (step: VerificationStep): Promise<Partial<Ve
   });
 };
 
-// Function to validate imported JSON data
+// Function to validate imported JSON data (verification sets)
 const validateImportedData = (data: any): data is VerificationSet[] => {
   if (!Array.isArray(data)) return false;
   return data.every(set =>
@@ -206,14 +207,25 @@ const validateImportedData = (data: any): data is VerificationSet[] => {
   );
 };
 
+// Function to determine overall status based on steps
+const getOverallStatusFromSteps = (steps: VerificationStep[]): ExecutionLogEntry['overallStatus'] => {
+    if (steps.length === 0 || steps.every(s => s.status === 'pending')) return 'pending';
+    if (steps.some(s => s.status === 'failure')) return 'failure';
+    if (steps.some(s => s.status === 'warning')) return 'warning';
+    if (steps.every(s => s.status === 'success')) return 'success';
+    return 'pending'; // Default or if still running
+};
+
 
 // --- Main Component ---
+const MAX_EXECUTION_HISTORY = 50; // Limit history size
 
 export default function Home() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [verificationSets, setVerificationSets] = useLocalStorage<VerificationSet[]>('verificationSets', []); // Use localStorage hook
-  const [activeSetId, setActiveSetId] = useLocalStorage<string | null>('activeVerificationSetId', null); // Store active set ID
+  const [verificationSets, setVerificationSets] = useLocalStorage<VerificationSet[]>('verificationSets', []);
+  const [activeSetId, setActiveSetId] = useLocalStorage<string | null>('activeVerificationSetId', null);
+  const [executionHistory, setExecutionHistory] = useLocalStorage<ExecutionLogEntry[]>('verificationExecutionHistory', []); // History state
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [isReportVisible, setIsReportVisible] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>("config");
@@ -262,9 +274,39 @@ export default function Home() {
     setActiveTab("config"); // Stay on config tab after changes
   };
 
+   // Function to add an entry to the execution history
+  const logExecution = useCallback((configSet: VerificationSet, startTime: number, endTime: number) => {
+    const finalSteps = configSet.steps; // Get the steps with final statuses
+    const overallStatus = getOverallStatusFromSteps(finalSteps);
+
+    const logEntry: ExecutionLogEntry = {
+        id: Date.now().toString(), // Unique ID for the log entry
+        configSetId: configSet.id,
+        configSetName: configSet.name,
+        startTime: startTime,
+        endTime: endTime,
+        overallStatus: overallStatus,
+        steps: finalSteps.map(step => ({ // Log relevant step details
+            id: step.id,
+            name: step.name,
+            type: step.type,
+            status: step.status,
+            resultMessage: step.resultMessage,
+        })),
+    };
+
+    setExecutionHistory(prevHistory => {
+        const updatedHistory = [logEntry, ...prevHistory];
+        // Limit the history size
+        return updatedHistory.slice(0, MAX_EXECUTION_HISTORY);
+    });
+  }, [setExecutionHistory]);
+
+
   const runVerification = useCallback(async (retryFailed = false) => {
     if (isRunning || !activeSet || activeSet.steps.length === 0) return;
 
+    const startTime = Date.now(); // Record start time
     setIsRunning(true);
     setIsReportVisible(false); // Hide report initially
     setActiveTab("execution"); // Switch to execution tab
@@ -323,10 +365,30 @@ export default function Home() {
       ));
     }
 
+    const endTime = Date.now(); // Record end time
     setIsRunning(false);
     setIsReportVisible(true); // Show report when finished
     setActiveTab("report"); // Switch to report tab when done
-  }, [activeSet, isRunning, activeSetId, setVerificationSets]); // Added dependencies
+
+    // Log the execution AFTER updating the final state
+    const finalActiveSet = verificationSets.find(set => set.id === activeSetId);
+    if (finalActiveSet) {
+        // Need to use the updated set from state after the loop completes
+        // Use a temporary variable to get the final state inside this callback scope
+        let finalSetForLogging: VerificationSet | undefined;
+        setVerificationSets(prevSets => {
+            finalSetForLogging = prevSets.find(set => set.id === activeSetId);
+            return prevSets; // Return the same state, just using the setter to get the latest value
+        });
+
+        if (finalSetForLogging) {
+            logExecution(finalSetForLogging, startTime, endTime);
+        }
+    }
+
+
+  }, [activeSet, isRunning, activeSetId, setVerificationSets, logExecution, verificationSets]); // Added verificationSets dependency
+
 
    const resetVerification = () => {
      if (!activeSetId) return;
@@ -522,8 +584,9 @@ export default function Home() {
     <main className="container mx-auto p-4 md:p-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <h1 className="text-3xl font-bold text-primary">VerifyNow</h1>
-         {/* Import/Export Buttons */}
-          <div className="flex gap-2">
+          {/* Global Actions */}
+          <div className="flex gap-2 flex-wrap"> {/* Added flex-wrap */}
+            {/* Import/Export */}
             <input
                 type="file"
                 ref={fileInputRef}
@@ -533,11 +596,19 @@ export default function Home() {
                 id="import-file-input"
             />
             <Button variant="outline" onClick={triggerFileInput}>
-                <Upload className="mr-2 h-4 w-4" /> Import JSON
+                <Upload className="mr-2 h-4 w-4" /> Import Configs
             </Button>
             <Button variant="outline" onClick={handleExport} disabled={verificationSets.length === 0}>
-                <Download className="mr-2 h-4 w-4" /> Export JSON
+                <Download className="mr-2 h-4 w-4" /> Export Configs
             </Button>
+             {/* Link to History Page */}
+             <Link href="/history" passHref legacyBehavior>
+                <Button variant="outline" asChild>
+                    <a> {/* Use anchor tag for Link child */}
+                        <History className="mr-2 h-4 w-4" /> View History
+                    </a>
+                </Button>
+            </Link>
          </div>
       </div>
 
@@ -713,5 +784,3 @@ export default function Home() {
     </main>
   );
 }
-
-    
