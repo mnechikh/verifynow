@@ -9,7 +9,7 @@ import { VerificationExecution } from '@/components/verification-execution';
 import { VerificationReport } from '@/components/verification-report';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"; // Added CardDescription
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import type { VerificationStep, VerificationStatus, CriteriaVerificationStep, ApiVerificationStep, VerificationSet, ExecutionLogEntry } from '@/types/verification';
 import { Play, Settings, FileText, RotateCcw, Loader2, Upload, Download, PlusCircle, Trash2, Edit, Copy, RefreshCcw, History } from 'lucide-react'; // Added History icon
+import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
 
 
 // --- Helper Functions ---
@@ -232,18 +233,27 @@ export default function Home() {
   const [newSetName, setNewSetName] = useState('');
   const [editingSetName, setEditingSetName] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
+  const [isClient, setIsClient] = useState(false); // State to track client-side mount
+
+  // Set isClient to true once the component mounts
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // Find the active configuration set
   const activeSet = verificationSets.find(set => set.id === activeSetId);
 
    // Ensure an active set exists on mount if there are sets but no active ID
    useEffect(() => {
-    if (verificationSets.length > 0 && !activeSetId && !activeSet) {
-        setActiveSetId(verificationSets[0].id);
-    } else if (verificationSets.length === 0 && activeSetId) {
-        setActiveSetId(null); // Clear active ID if no sets exist
+    // Only run this logic on the client after mount
+    if (isClient) {
+        if (verificationSets.length > 0 && !activeSetId && !activeSet) {
+            setActiveSetId(verificationSets[0].id);
+        } else if (verificationSets.length === 0 && activeSetId) {
+            setActiveSetId(null); // Clear active ID if no sets exist
+        }
     }
-   }, [verificationSets, activeSetId, activeSet, setActiveSetId]);
+   }, [verificationSets, activeSetId, activeSet, setActiveSetId, isClient]); // Add isClient dependency
 
    // Check if the report was previously visible for the current active set
    useEffect(() => {
@@ -578,6 +588,69 @@ export default function Home() {
   // Determine if Retry button should be enabled
   const canRetry = isReportVisible && !isRunning && stepsForReportCheck.some(s => s.status === 'failure' || s.status === 'warning');
 
+  // Render loading state or skeletons until client is mounted
+  if (!isClient) {
+    return (
+         <main className="container mx-auto p-4 md:p-8">
+             <Skeleton className="h-8 w-48 mb-6" /> {/* Title Skeleton */}
+             <div className="flex justify-end gap-2 mb-6">
+                 <Skeleton className="h-10 w-36" />
+                 <Skeleton className="h-10 w-36" />
+                 <Skeleton className="h-10 w-36" />
+             </div>
+             <Card className="mb-6">
+                <CardHeader>
+                     <Skeleton className="h-6 w-1/3 mb-2" />
+                </CardHeader>
+                <CardContent className="space-y-4">
+                     <div className="flex flex-col sm:flex-row gap-2 items-end">
+                          <div className="flex-grow w-full sm:w-auto space-y-2">
+                               <Skeleton className="h-4 w-1/4" />
+                               <Skeleton className="h-10 w-full" />
+                          </div>
+                          <Skeleton className="h-10 w-full sm:w-32" />
+                     </div>
+                      <div className="flex flex-col sm:flex-row gap-2 items-end">
+                          <div className="flex-grow w-full sm:w-auto space-y-2">
+                               <Skeleton className="h-4 w-1/4" />
+                               <Skeleton className="h-10 w-full" />
+                          </div>
+                         <div className="flex gap-1 w-full sm:w-auto justify-end">
+                              <Skeleton className="h-10 w-10" />
+                              <Skeleton className="h-10 w-10" />
+                              <Skeleton className="h-10 w-10" />
+                         </div>
+                     </div>
+                </CardContent>
+            </Card>
+             <Skeleton className="h-8 w-1/2 mb-6" /> {/* Current Config Skeleton */}
+             <div className="flex justify-end gap-2 mb-6">
+                  <Skeleton className="h-10 w-36" />
+                  <Skeleton className="h-10 w-24" />
+                  <Skeleton className="h-10 w-24" />
+             </div>
+             <Tabs defaultValue="config" className="w-full">
+                 <TabsList className="grid w-full grid-cols-3 mb-6">
+                     <Skeleton className="h-10 w-full" />
+                     <Skeleton className="h-10 w-full" />
+                     <Skeleton className="h-10 w-full" />
+                 </TabsList>
+                  <TabsContent value="config">
+                       <Card>
+                           <CardHeader>
+                                <Skeleton className="h-6 w-1/3 mb-2" />
+                                <Skeleton className="h-4 w-1/2" />
+                           </CardHeader>
+                            <CardContent>
+                                <Skeleton className="h-24 w-full" />
+                            </CardContent>
+                       </Card>
+                  </TabsContent>
+             </Tabs>
+         </main>
+    );
+  }
+
 
   return (
     <main className="container mx-auto p-4 md:p-8">
@@ -615,6 +688,7 @@ export default function Home() {
         <Card className="mb-6">
             <CardHeader>
                  <CardTitle>Manage Configurations</CardTitle>
+                 <CardDescription>Create, select, edit, duplicate, or delete verification sets.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
                  {/* Add New Set */}
@@ -633,14 +707,13 @@ export default function Home() {
                     </Button>
                  </div>
 
-                 {/* Select Active Set */}
-                 {verificationSets.length > 0 && (
+                 {/* Select Active Set - Only render if there are sets */}
+                 {verificationSets.length > 0 ? (
                     <div className="flex flex-col sm:flex-row gap-2 items-end">
                         <div className="flex-grow w-full sm:w-auto">
                             <Label htmlFor="active-config-select">Active Configuration</Label>
                              <Select value={activeSetId ?? ""} onValueChange={(id) => {
                                  setActiveSetId(id);
-                                 // setIsReportVisible(false); // Reset report visibility handled by useEffect now
                                  setActiveTab('config'); // Switch to config tab
                                 }}>
                                 <SelectTrigger id="active-config-select" className="w-full">
@@ -714,6 +787,8 @@ export default function Home() {
                            </div>
                        )}
                     </div>
+                 ) : (
+                      <p className="text-muted-foreground text-sm">No configurations found. Add a new set above or import configurations.</p>
                  )}
             </CardContent>
         </Card>
@@ -758,7 +833,10 @@ export default function Home() {
                 <VerificationReport steps={activeSet?.steps || []} />
               ) : (
                  <Card className="text-center py-10">
-                    <CardContent className="pt-6">
+                    <CardHeader>
+                         <CardTitle>Report Not Ready</CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-0">
                         <p className="text-muted-foreground">
                             {activeSet && activeSet.steps.length === 0
                              ? "Add verification steps to this configuration first."
@@ -772,9 +850,12 @@ export default function Home() {
           </>
        ) : (
            <Card className="text-center py-10">
-                <CardContent className="pt-6">
+                <CardHeader>
+                     <CardTitle>No Configuration Selected</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
                     <p className="text-muted-foreground">
-                       No configuration set selected or available. Please add or select a configuration above.
+                       Please add a new configuration or select an existing one above to begin.
                     </p>
                 </CardContent>
             </Card>
@@ -783,5 +864,3 @@ export default function Home() {
     </main>
   );
 }
-
-    
