@@ -1,35 +1,42 @@
+
 "use client";
 
 import type * as React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { VerificationConfig } from '@/components/verification-config';
 import { VerificationExecution } from '@/components/verification-execution';
 import { VerificationReport } from '@/components/verification-report';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent } from "@/components/ui/card"; // Ensure Card and CardContent are imported
-import type { VerificationStep, VerificationStatus, CriteriaVerificationStep, ApiVerificationStep } from '@/types/verification';
-import { Play, Settings, FileText, RotateCcw, Loader2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { useLocalStorage } from '@/hooks/use-local-storage'; // Import useLocalStorage hook
+import type { VerificationStep, VerificationStatus, CriteriaVerificationStep, ApiVerificationStep, VerificationSet } from '@/types/verification';
+import { Play, Settings, FileText, RotateCcw, Loader2, Upload, Download, PlusCircle, Trash2, Edit, Copy } from 'lucide-react';
 
-// Utility function to get value from nested object using dot notation path
+
+// --- Helper Functions ---
+
+// Utility function to get value from nested object using dot notation path (remains the same)
 const getValueFromPath = (obj: any, path: string): any => {
   return path.split(/[.[\]]+/).filter(Boolean).reduce((acc, part) => {
-    // Handle array index access like 'items[0]'
     const arrayMatch = part.match(/^(\w+)\[(\d+)\]$/);
     if (arrayMatch) {
         const arrayName = arrayMatch[1];
         const indexNum = parseInt(arrayMatch[2], 10);
         return acc && acc[arrayName] && acc[arrayName][indexNum];
     }
-    // Handle regular property access
     return acc && acc[part];
   }, obj);
 };
 
-
-// Mock function to simulate step execution
+// Mock function to simulate step execution (remains the same)
 const simulateStepExecution = async (step: VerificationStep): Promise<Partial<VerificationStep>> => {
-  return new Promise(async (resolve) => {
+   return new Promise(async (resolve) => {
     const duration = Math.random() * 1500 + 500; // Simulate 0.5 to 2 seconds execution time
     await new Promise(res => setTimeout(res, duration)); // Wait for simulated duration
 
@@ -168,125 +175,506 @@ const simulateStepExecution = async (step: VerificationStep): Promise<Partial<Ve
         status = 'failure'; // Should not happen with defined types
         resultMessage = 'Unknown step type encountered.';
     }
-
-    // Limit result message length for display clarity if needed
-    // const MAX_MSG_LENGTH = 500;
-    // if (resultMessage.length > MAX_MSG_LENGTH) {
-    //     resultMessage = resultMessage.substring(0, MAX_MSG_LENGTH) + '... [truncated]';
-    // }
-
-
     resolve({ status, resultMessage });
   });
 };
 
+// Function to validate imported JSON data
+const validateImportedData = (data: any): data is VerificationSet[] => {
+  if (!Array.isArray(data)) return false;
+  return data.every(set =>
+    typeof set === 'object' &&
+    set !== null &&
+    typeof set.id === 'string' &&
+    typeof set.name === 'string' &&
+    Array.isArray(set.steps) &&
+    set.steps.every((step: any) =>
+      typeof step === 'object' &&
+      step !== null &&
+      typeof step.id === 'string' &&
+      typeof step.name === 'string' &&
+      typeof step.description === 'string' &&
+      ['pending', 'running', 'success', 'failure', 'warning'].includes(step.status) && // Check status enum
+      (step.type === 'criteria' || step.type === 'api') && // Check type enum
+      (step.type === 'criteria' ? typeof step.criteria === 'string' : true) &&
+      (step.type === 'api' ?
+        typeof step.apiUrl === 'string' &&
+        typeof step.apiKeyPath === 'string' &&
+        typeof step.expectedValue === 'string'
+        : true)
+    )
+  );
+};
+
+
+// --- Main Component ---
 
 export default function Home() {
-  const [steps, setSteps] = useState<VerificationStep[]>([]);
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [verificationSets, setVerificationSets] = useLocalStorage<VerificationSet[]>('verificationSets', []); // Use localStorage hook
+  const [activeSetId, setActiveSetId] = useLocalStorage<string | null>('activeVerificationSetId', null); // Store active set ID
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [isReportVisible, setIsReportVisible] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>("config");
+  const [newSetName, setNewSetName] = useState('');
+  const [editingSetName, setEditingSetName] = useState('');
+  const [isEditingName, setIsEditingName] = useState(false);
+
+  // Find the active configuration set
+  const activeSet = verificationSets.find(set => set.id === activeSetId);
+
+   // Ensure an active set exists on mount if there are sets but no active ID
+   useEffect(() => {
+    if (verificationSets.length > 0 && !activeSetId && !activeSet) {
+        setActiveSetId(verificationSets[0].id);
+    } else if (verificationSets.length === 0 && activeSetId) {
+        setActiveSetId(null); // Clear active ID if no sets exist
+    }
+   }, [verificationSets, activeSetId, activeSet, setActiveSetId]);
+
 
   const handleStepsChange = (updatedSteps: VerificationStep[]) => {
-    setSteps(updatedSteps);
+    if (!activeSetId) return;
+    const updatedSets = verificationSets.map(set =>
+      set.id === activeSetId ? { ...set, steps: updatedSteps } : set
+    );
+    setVerificationSets(updatedSets);
     // Reset report and status if configuration changes
     setIsReportVisible(false);
-     setSteps(prevSteps => prevSteps.map(s => ({ ...s, status: 'pending', resultMessage: undefined })));
-     setActiveTab("config"); // Stay on config tab after changes
+     // Reset status only for the active set
+    const resetStatusSets = updatedSets.map(set =>
+        set.id === activeSetId
+          ? { ...set, steps: set.steps.map(s => ({ ...s, status: 'pending', resultMessage: undefined })) }
+          : set
+      );
+    setVerificationSets(resetStatusSets);
+    setActiveTab("config"); // Stay on config tab after changes
   };
 
   const runVerification = useCallback(async () => {
-    if (isRunning || steps.length === 0) return;
+    if (isRunning || !activeSet || activeSet.steps.length === 0) return;
 
     setIsRunning(true);
     setIsReportVisible(false);
     setActiveTab("execution"); // Switch to execution tab
 
-    // Reset statuses before running
-    setSteps(prevSteps => prevSteps.map(s => ({ ...s, status: 'pending', resultMessage: undefined })));
+    // Reset statuses only for the active set before running
+    let currentSteps = [...activeSet.steps]; // Get a mutable copy of the active set's steps
+    currentSteps = currentSteps.map(s => ({ ...s, status: 'pending', resultMessage: undefined }));
 
-    const updatedSteps = [...steps]; // Create a mutable copy
+    // Update the state immediately to show pending status
+     setVerificationSets(prevSets => prevSets.map(set =>
+        set.id === activeSetId ? { ...set, steps: currentSteps } : set
+      ));
 
-    for (let i = 0; i < updatedSteps.length; i++) {
-      const currentStepId = updatedSteps[i].id;
+
+    for (let i = 0; i < currentSteps.length; i++) {
+      const currentStepId = currentSteps[i].id;
 
       // Set current step to 'running'
-      updatedSteps[i] = { ...updatedSteps[i], status: 'running' };
-      setSteps([...updatedSteps]); // Update state to show 'running' status
+      currentSteps[i] = { ...currentSteps[i], status: 'running' };
+      setVerificationSets(prevSets => prevSets.map(set =>
+        set.id === activeSetId ? { ...set, steps: [...currentSteps] } : set
+      ));
 
       // Simulate execution
       try {
-        const result = await simulateStepExecution(updatedSteps[i]);
+        const result = await simulateStepExecution(currentSteps[i]);
         // Update step with result
-         updatedSteps[i] = { ...updatedSteps[i], ...result };
+         currentSteps[i] = { ...currentSteps[i], ...result };
 
       } catch (error) {
          console.error("Error executing step:", error);
          // Mark step as failed on error
-         updatedSteps[i] = { ...updatedSteps[i], status: 'failure', resultMessage: `Execution error occurred: ${error instanceof Error ? error.message : String(error)}` };
+         currentSteps[i] = { ...currentSteps[i], status: 'failure', resultMessage: `Execution error occurred: ${error instanceof Error ? error.message : String(error)}` };
       }
-      setSteps([...updatedSteps]); // Update state with the result of the current step
+
+      // Update state with the result of the current step
+       setVerificationSets(prevSets => prevSets.map(set =>
+        set.id === activeSetId ? { ...set, steps: [...currentSteps] } : set
+      ));
     }
 
     setIsRunning(false);
     setIsReportVisible(true);
     setActiveTab("report"); // Switch to report tab when done
-  }, [steps, isRunning]); // Add isRunning to dependencies
+  }, [activeSet, isRunning, activeSetId, setVerificationSets]); // Added dependencies
 
    const resetVerification = () => {
-    setIsRunning(false);
-    setIsReportVisible(false);
-    setSteps(prevSteps => prevSteps.map(s => ({ ...s, status: 'pending', resultMessage: undefined })));
-    setActiveTab("config");
+     if (!activeSetId) return;
+     setIsRunning(false);
+     setIsReportVisible(false);
+     // Reset status only for the active set
+     setVerificationSets(prevSets => prevSets.map(set =>
+        set.id === activeSetId
+          ? { ...set, steps: set.steps.map(s => ({ ...s, status: 'pending', resultMessage: undefined })) }
+          : set
+      ));
+     setActiveTab("config");
   };
 
+   // --- Configuration Set Management ---
+
+    const addConfigurationSet = () => {
+        if (!newSetName.trim()) {
+            toast({ title: "Error", description: "Configuration name cannot be empty.", variant: "destructive" });
+            return;
+        }
+        const newSet: VerificationSet = {
+            id: Date.now().toString(),
+            name: newSetName.trim(),
+            steps: [],
+        };
+        const updatedSets = [...verificationSets, newSet];
+        setVerificationSets(updatedSets);
+        setActiveSetId(newSet.id); // Activate the new set
+        setNewSetName(''); // Clear input field
+        setActiveTab("config"); // Switch to config tab
+        toast({ title: "Success", description: `Configuration "${newSet.name}" added.` });
+    };
+
+    const deleteConfigurationSet = (setId: string) => {
+        const setToDelete = verificationSets.find(set => set.id === setId);
+        if (!setToDelete) return;
+
+        const updatedSets = verificationSets.filter(set => set.id !== setId);
+        setVerificationSets(updatedSets);
+
+        toast({ title: "Success", description: `Configuration "${setToDelete.name}" deleted.` });
+
+        // If the deleted set was active, activate the first remaining set or null
+        if (activeSetId === setId) {
+            setActiveSetId(updatedSets.length > 0 ? updatedSets[0].id : null);
+             setIsReportVisible(false); // Hide report if active set is deleted
+        }
+    };
+
+    const startEditingName = (setId: string) => {
+        const set = verificationSets.find(s => s.id === setId);
+        if (set) {
+            setEditingSetName(set.name);
+            setIsEditingName(true);
+        }
+    };
+
+    const saveEditedName = () => {
+        if (!activeSetId || !editingSetName.trim()) {
+             toast({ title: "Error", description: "Configuration name cannot be empty.", variant: "destructive" });
+             return;
+        }
+        const updatedSets = verificationSets.map(set =>
+            set.id === activeSetId ? { ...set, name: editingSetName.trim() } : set
+        );
+        setVerificationSets(updatedSets);
+        setIsEditingName(false);
+        toast({ title: "Success", description: "Configuration name updated." });
+    };
+
+     const duplicateConfigurationSet = (setId: string) => {
+        const setToDuplicate = verificationSets.find(set => set.id === setId);
+        if (!setToDuplicate) return;
+
+        const newSet: VerificationSet = {
+            ...setToDuplicate,
+            id: Date.now().toString(), // New unique ID
+            name: `${setToDuplicate.name} (Copy)`, // Append "(Copy)"
+             // Deep copy steps with new IDs and reset status
+            steps: setToDuplicate.steps.map(step => ({
+                ...step,
+                id: `${step.id}-copy-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`, // Ensure unique step IDs
+                status: 'pending',
+                resultMessage: undefined
+            }))
+        };
+
+        const updatedSets = [...verificationSets, newSet];
+        setVerificationSets(updatedSets);
+        setActiveSetId(newSet.id); // Activate the duplicated set
+        toast({ title: "Success", description: `Configuration "${setToDuplicate.name}" duplicated as "${newSet.name}".` });
+        setActiveTab("config"); // Go to config tab
+    };
+
+
+    // --- Import/Export Functionality ---
+
+    const handleExport = () => {
+        if (verificationSets.length === 0) {
+            toast({ title: "Info", description: "No configurations to export.", variant: "default" });
+            return;
+        }
+        const jsonString = JSON.stringify(verificationSets, null, 2);
+        const blob = new Blob([jsonString], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'verify-now-configurations.json';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        toast({ title: "Success", description: "Configurations exported." });
+    };
+
+    const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const jsonString = e.target?.result as string;
+                const importedData = JSON.parse(jsonString);
+
+                if (!validateImportedData(importedData)) {
+                    throw new Error("Invalid JSON structure or content.");
+                }
+
+                // Basic merge: Add new sets, overwrite existing by ID
+                const existingIds = new Set(verificationSets.map(set => set.id));
+                const setsToAdd = importedData.filter(set => !existingIds.has(set.id));
+                const setsToUpdate = importedData.filter(set => existingIds.has(set.id));
+
+                let updatedSets = [...verificationSets];
+                setsToUpdate.forEach(updateSet => {
+                    updatedSets = updatedSets.map(existingSet =>
+                        existingSet.id === updateSet.id ? updateSet : existingSet
+                    );
+                });
+                updatedSets = [...updatedSets, ...setsToAdd];
+
+
+                 // Reset status for all imported/updated steps
+                updatedSets = updatedSets.map(set => ({
+                    ...set,
+                    steps: set.steps.map(step => ({ ...step, status: 'pending', resultMessage: undefined }))
+                }));
+
+
+                setVerificationSets(updatedSets);
+
+                // Activate the first imported set if none was active before or if current active exists in import
+                if (importedData.length > 0 && (!activeSetId || importedData.some(s => s.id === activeSetId))) {
+                     setActiveSetId(importedData[0].id);
+                 } else if (updatedSets.length > 0 && !activeSetId) {
+                     setActiveSetId(updatedSets[0].id); // Fallback to first available set
+                 }
+
+                toast({ title: "Success", description: "Configurations imported successfully." });
+                 setActiveTab("config"); // Go to config tab after import
+
+            } catch (error: any) {
+                toast({
+                    title: "Import Error",
+                    description: `Failed to import configurations: ${error.message || 'Invalid file format.'}`,
+                    variant: "destructive",
+                });
+            } finally {
+                // Reset file input value to allow importing the same file again
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+            }
+        };
+        reader.readAsText(file);
+    };
+
+     const triggerFileInput = () => {
+        fileInputRef.current?.click();
+    };
+
+
   // Determine if report tab should be disabled
-  const isReportTabDisabled = steps.length === 0 || (!isReportVisible && !isRunning && steps.every(s => s.status === 'pending'));
+  const stepsForReportCheck = activeSet?.steps || [];
+  const isReportTabDisabled = stepsForReportCheck.length === 0 || (!isReportVisible && !isRunning && stepsForReportCheck.every(s => s.status === 'pending'));
+
 
   return (
     <main className="container mx-auto p-4 md:p-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
         <h1 className="text-3xl font-bold text-primary">VerifyNow</h1>
-         <div className="flex gap-2">
-            <Button onClick={runVerification} disabled={isRunning || steps.length === 0} className="bg-accent hover:bg-accent/90 text-accent-foreground">
-                {isRunning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-                {isRunning ? 'Verifying...' : 'Run Verification'}
+         {/* Import/Export Buttons */}
+          <div className="flex gap-2">
+            <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleImport}
+                accept=".json"
+                style={{ display: 'none' }} // Hide the actual input
+                id="import-file-input"
+            />
+            <Button variant="outline" onClick={triggerFileInput}>
+                <Upload className="mr-2 h-4 w-4" /> Import JSON
             </Button>
-             <Button onClick={resetVerification} variant="outline" disabled={isRunning && !isReportVisible}>
-                <RotateCcw className="mr-2 h-4 w-4" />
-                Reset
+            <Button variant="outline" onClick={handleExport} disabled={verificationSets.length === 0}>
+                <Download className="mr-2 h-4 w-4" /> Export JSON
             </Button>
          </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-3 mb-6">
-          <TabsTrigger value="config"><Settings className="mr-2 h-4 w-4 inline-block"/>Configure</TabsTrigger>
-          <TabsTrigger value="execution"><Play className="mr-2 h-4 w-4 inline-block"/>Execute</TabsTrigger>
-          <TabsTrigger value="report" disabled={isReportTabDisabled}><FileText className="mr-2 h-4 w-4 inline-block"/>Report</TabsTrigger>
-        </TabsList>
-        <TabsContent value="config">
-          <VerificationConfig initialSteps={steps} onStepsChange={handleStepsChange} />
-        </TabsContent>
-        <TabsContent value="execution">
-          <VerificationExecution steps={steps} isRunning={isRunning} />
-        </TabsContent>
-        <TabsContent value="report">
-          {isReportVisible ? (
-            <VerificationReport steps={steps} />
-          ) : (
-             <Card className="text-center py-10"> {/* Use Card for consistent styling */}
+        {/* Configuration Set Management */}
+        <Card className="mb-6">
+            <CardHeader>
+                 <CardTitle>Manage Configurations</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                 {/* Add New Set */}
+                 <div className="flex flex-col sm:flex-row gap-2 items-end">
+                      <div className="flex-grow w-full sm:w-auto">
+                        <Label htmlFor="new-config-name">New Configuration Name</Label>
+                        <Input
+                            id="new-config-name"
+                            value={newSetName}
+                            onChange={(e) => setNewSetName(e.target.value)}
+                            placeholder="e.g., Production Services"
+                        />
+                     </div>
+                    <Button onClick={addConfigurationSet} className="w-full sm:w-auto">
+                        <PlusCircle className="mr-2 h-4 w-4" /> Add New Set
+                    </Button>
+                 </div>
+
+                 {/* Select Active Set */}
+                 {verificationSets.length > 0 && (
+                    <div className="flex flex-col sm:flex-row gap-2 items-end">
+                        <div className="flex-grow w-full sm:w-auto">
+                            <Label htmlFor="active-config-select">Active Configuration</Label>
+                             <Select value={activeSetId ?? ""} onValueChange={(id) => {
+                                 setActiveSetId(id);
+                                 setIsReportVisible(false); // Reset report visibility when changing sets
+                                 setActiveTab('config'); // Switch to config tab
+                                }}>
+                                <SelectTrigger id="active-config-select" className="w-full">
+                                    <SelectValue placeholder="Select a configuration set" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {verificationSets.map(set => (
+                                    <SelectItem key={set.id} value={set.id}>
+                                        {set.name}
+                                    </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                       {activeSet && (
+                           <div className="flex gap-1 w-full sm:w-auto justify-end">
+                                {/* Edit Name */}
+                               <AlertDialog open={isEditingName} onOpenChange={setIsEditingName}>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="ghost" size="icon" onClick={() => startEditingName(activeSet.id)} aria-label={`Edit name for ${activeSet.name}`}>
+                                             <Edit className="h-4 w-4" />
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                        <AlertDialogTitle>Edit Configuration Name</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            Enter a new name for the configuration "{activeSet.name}".
+                                        </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <Input
+                                            value={editingSetName}
+                                            onChange={(e) => setEditingSetName(e.target.value)}
+                                            placeholder="New configuration name"
+                                            autoFocus
+                                            onKeyDown={(e) => { if (e.key === 'Enter') { saveEditedName(); setIsEditingName(false); }}}
+                                        />
+                                        <AlertDialogFooter>
+                                        <AlertDialogCancel onClick={() => setIsEditingName(false)}>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => { saveEditedName(); setIsEditingName(false); }}>Save</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                                {/* Duplicate */}
+                                <Button variant="ghost" size="icon" onClick={() => duplicateConfigurationSet(activeSet.id)} aria-label={`Duplicate ${activeSet.name}`}>
+                                    <Copy className="h-4 w-4" />
+                                </Button>
+                               {/* Delete */}
+                               <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="ghost" size="icon" aria-label={`Delete ${activeSet.name}`} disabled={verificationSets.length <= 1}>
+                                            <Trash2 className="h-4 w-4 text-destructive" />
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            This action cannot be undone. This will permanently delete the configuration set "{activeSet.name}".
+                                        </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => deleteConfigurationSet(activeSet.id)} className="bg-destructive hover:bg-destructive/90">
+                                            Delete
+                                        </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                           </div>
+                       )}
+                    </div>
+                 )}
+            </CardContent>
+        </Card>
+
+
+       {/* Tabs for Config, Execution, Report */}
+       {activeSet ? (
+         <>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+             <h2 className="text-2xl font-semibold text-secondary-foreground">
+                 Current Configuration: <span className="text-primary">{activeSet.name}</span>
+             </h2>
+              <div className="flex gap-2">
+                <Button onClick={runVerification} disabled={isRunning || !activeSet || activeSet.steps.length === 0} className="bg-accent hover:bg-accent/90 text-accent-foreground">
+                    {isRunning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+                    {isRunning ? 'Verifying...' : 'Run Verification'}
+                </Button>
+                 <Button onClick={resetVerification} variant="outline" disabled={isRunning && !isReportVisible}>
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Reset
+                </Button>
+             </div>
+          </div>
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <TabsList className="grid w-full grid-cols-3 mb-6">
+              <TabsTrigger value="config"><Settings className="mr-2 h-4 w-4 inline-block"/>Configure</TabsTrigger>
+              <TabsTrigger value="execution"><Play className="mr-2 h-4 w-4 inline-block"/>Execute</TabsTrigger>
+              <TabsTrigger value="report" disabled={isReportTabDisabled}><FileText className="mr-2 h-4 w-4 inline-block"/>Report</TabsTrigger>
+            </TabsList>
+            <TabsContent value="config">
+              <VerificationConfig initialSteps={activeSet?.steps || []} onStepsChange={handleStepsChange} />
+            </TabsContent>
+            <TabsContent value="execution">
+              <VerificationExecution steps={activeSet?.steps || []} isRunning={isRunning} />
+            </TabsContent>
+            <TabsContent value="report">
+              {isReportVisible ? (
+                <VerificationReport steps={activeSet?.steps || []} />
+              ) : (
+                 <Card className="text-center py-10">
+                    <CardContent className="pt-6">
+                        <p className="text-muted-foreground">
+                            {activeSet && activeSet.steps.length === 0
+                             ? "Add verification steps to this configuration first."
+                             : "Run the verification process to generate the report."}
+                        </p>
+                    </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
+          </>
+       ) : (
+           <Card className="text-center py-10">
                 <CardContent className="pt-6">
                     <p className="text-muted-foreground">
-                        {steps.length === 0
-                         ? "Configure verification steps first."
-                         : "Run the verification process to generate the report."}
+                       No configuration set selected or available. Please add or select a configuration above.
                     </p>
                 </CardContent>
             </Card>
-          )}
-        </TabsContent>
-      </Tabs>
+       )}
 
     </main>
   );

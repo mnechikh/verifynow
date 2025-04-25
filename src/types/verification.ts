@@ -28,3 +28,10 @@ export interface ApiVerificationStep extends VerificationStepBase {
 
 // Union type for any verification step
 export type VerificationStep = CriteriaVerificationStep | ApiVerificationStep;
+
+// Represents a named set of verification steps
+export interface VerificationSet {
+    id: string; // Unique ID for the configuration set
+    name: string; // User-friendly name for the set
+    steps: VerificationStep[];
+}
