@@ -38,6 +38,7 @@ const getValueFromPath = (obj: any, path: string): any => {
 
 // Mock function to simulate step execution (remains the same)
 const simulateStepExecution = async (step: VerificationStep): Promise<Partial<VerificationStep>> => {
+   console.log(`Simulating execution for step: ${step.name}`); // Added log
    return new Promise(async (resolve) => {
     const duration = Math.random() * 1500 + 500; // Simulate 0.5 to 2 seconds execution time
     await new Promise(res => setTimeout(res, duration)); // Wait for simulated duration
@@ -78,6 +79,7 @@ const simulateStepExecution = async (step: VerificationStep): Promise<Partial<Ve
                      return { status: 401, data: { message: 'Simulated Unauthorized - Check API Token' }};
                 }
                 if (step.apiUrl.includes('fail-request')) { // Simulate a network/500 error
+                    console.error(`Simulated 500 error for ${step.apiUrl}`);
                     return { status: 500, data: { message: 'Simulated API failure' } };
                 }
                 // Simulate a successful response structure based on path
@@ -177,6 +179,7 @@ const simulateStepExecution = async (step: VerificationStep): Promise<Partial<Ve
         status = 'failure'; // Should not happen with defined types
         resultMessage = 'Unknown step type encountered.';
     }
+    console.log(`Step ${step.name} finished with status: ${status}`); // Added log
     resolve({ status, resultMessage });
   });
 };
@@ -210,11 +213,11 @@ const validateImportedData = (data: any): data is VerificationSet[] => {
 
 // Function to determine overall status based on steps
 const getOverallStatusFromSteps = (steps: VerificationStep[]): ExecutionLogEntry['overallStatus'] => {
-    if (steps.length === 0 || steps.every(s => s.status === 'pending')) return 'pending';
+    if (steps.length === 0 || steps.every(s => s.status === 'pending' || s.status === 'running')) return 'pending'; // Check for running too
     if (steps.some(s => s.status === 'failure')) return 'failure';
     if (steps.some(s => s.status === 'warning')) return 'warning';
     if (steps.every(s => s.status === 'success')) return 'success';
-    return 'pending'; // Default or if still running
+    return 'pending'; // Default or if still running/mixed pending/success
 };
 
 
@@ -288,6 +291,7 @@ export default function Home() {
   const logExecution = useCallback((configSet: VerificationSet, startTime: number, endTime: number) => {
     const finalSteps = configSet.steps; // Get the steps with final statuses
     const overallStatus = getOverallStatusFromSteps(finalSteps);
+    console.log("Logging execution with overall status:", overallStatus); // Added log
 
     const logEntry: ExecutionLogEntry = {
         id: Date.now().toString(), // Unique ID for the log entry
@@ -314,89 +318,93 @@ export default function Home() {
 
 
   const runVerification = useCallback(async (retryFailed = false) => {
-    if (isRunning || !activeSet || activeSet.steps.length === 0) return;
+    if (isRunning || !activeSetId || !verificationSets.length) return;
 
+    const currentActiveSet = verificationSets.find(set => set.id === activeSetId);
+    if (!currentActiveSet || currentActiveSet.steps.length === 0) return;
+
+    console.log("Starting verification run...", retryFailed ? "(Retry)" : "(Full)"); // Added log
     const startTime = Date.now(); // Record start time
     setIsRunning(true);
     setIsReportVisible(false); // Hide report initially
     setActiveTab("execution"); // Switch to execution tab
 
-    // Reset statuses only for the active set before running
-    let currentSteps = [...activeSet.steps]; // Get a mutable copy of the active set's steps
+    // Create a mutable copy of the steps for this run
+    let stepsToRun = [...currentActiveSet.steps];
 
+    // Reset statuses before running
     if (retryFailed) {
         // Reset only failed or warning steps to pending for retry
-        currentSteps = currentSteps.map(s =>
+        stepsToRun = stepsToRun.map(s =>
             (s.status === 'failure' || s.status === 'warning')
                 ? { ...s, status: 'pending', resultMessage: undefined }
                 : s // Keep successful steps as they are
         );
     } else {
         // Full run: Reset all steps to pending
-        currentSteps = currentSteps.map(s => ({ ...s, status: 'pending', resultMessage: undefined }));
+        stepsToRun = stepsToRun.map(s => ({ ...s, status: 'pending', resultMessage: undefined }));
     }
 
+    // Update the state immediately with reset/initial statuses
+    setVerificationSets(prevSets => prevSets.map(set =>
+        set.id === activeSetId ? { ...set, steps: stepsToRun } : set
+    ));
 
-    // Update the state immediately to show initial statuses
+    // Execute steps sequentially
+    for (let i = 0; i < stepsToRun.length; i++) {
+        const stepToExecute = stepsToRun[i];
+
+        // Skip steps that were already successful if retrying
+        if (retryFailed && stepToExecute.status === 'success') {
+            continue;
+        }
+
+        // Set current step to 'running'
+        stepsToRun[i] = { ...stepToExecute, status: 'running' };
+        setVerificationSets(prevSets => prevSets.map(set =>
+            set.id === activeSetId ? { ...set, steps: [...stepsToRun] } : set // Update with the 'running' status
+        ));
+
+        // Simulate execution
+        try {
+            const result = await simulateStepExecution(stepToExecute);
+            // Update the step in our mutable array with the result
+            stepsToRun[i] = { ...stepsToRun[i], ...result }; // Apply result status and message
+        } catch (error) {
+            console.error("Error executing step:", error);
+            // Mark step as failed on error
+            stepsToRun[i] = { ...stepsToRun[i], status: 'failure', resultMessage: `Execution error occurred: ${error instanceof Error ? error.message : String(error)}` };
+        }
+
+        // Update state *after* the step completes with its final status
+        setVerificationSets(prevSets => prevSets.map(set =>
+            set.id === activeSetId ? { ...set, steps: [...stepsToRun] } : set
+        ));
+    }
+
+    const endTime = Date.now();
+    console.log("Verification run finished."); // Added log
+
+    // Now that the loop is finished and all steps have their final status,
+    // update the main state and log the execution.
+
+    // Get the final state of the active set *after* the loop
+     const finalActiveSet = { ...currentActiveSet, steps: stepsToRun };
+
+     // Update the main verificationSets state with the final results
      setVerificationSets(prevSets => prevSets.map(set =>
-        set.id === activeSetId ? { ...set, steps: currentSteps } : set
-      ));
+         set.id === activeSetId ? finalActiveSet : set
+     ));
 
+     // Log the execution with the final state
+     logExecution(finalActiveSet, startTime, endTime);
 
-    for (let i = 0; i < currentSteps.length; i++) {
-      const currentStepId = currentSteps[i].id;
-
-       // Skip steps that were already successful if retrying
-       if (retryFailed && currentSteps[i].status === 'success') {
-          continue;
-       }
-
-      // Set current step to 'running'
-      currentSteps[i] = { ...currentSteps[i], status: 'running' };
-      setVerificationSets(prevSets => prevSets.map(set =>
-        set.id === activeSetId ? { ...set, steps: [...currentSteps] } : set
-      ));
-
-      // Simulate execution
-      try {
-        const result = await simulateStepExecution(currentSteps[i]);
-        // Update step with result
-         currentSteps[i] = { ...currentSteps[i], ...result };
-
-      } catch (error) {
-         console.error("Error executing step:", error);
-         // Mark step as failed on error
-         currentSteps[i] = { ...currentSteps[i], status: 'failure', resultMessage: `Execution error occurred: ${error instanceof Error ? error.message : String(error)}` };
-      }
-
-      // Update state with the result of the current step
-       setVerificationSets(prevSets => prevSets.map(set =>
-        set.id === activeSetId ? { ...set, steps: [...currentSteps] } : set
-      ));
-    }
-
-    const endTime = Date.now(); // Record end time
+    // Set state variables after final state update
     setIsRunning(false);
     setIsReportVisible(true); // Show report when finished
     setActiveTab("report"); // Switch to report tab when done
 
-    // Log the execution AFTER updating the final state
-    // Need to use the updated set from state after the loop completes
-    // Use a temporary variable to get the final state inside this callback scope
-    let finalSetForLogging: VerificationSet | undefined;
-    // This looks weird, but it's a way to get the *latest* state value synchronously
-    // within the callback after all async operations and state updates within the loop.
-    setVerificationSets(prevSets => {
-        finalSetForLogging = prevSets.find(set => set.id === activeSetId);
-        return prevSets; // Return the same state, just using the setter to get the latest value
-    });
-
-    if (finalSetForLogging) {
-        logExecution(finalSetForLogging, startTime, endTime);
-    }
-
-
-  }, [activeSet, isRunning, activeSetId, setVerificationSets, logExecution]); // Removed verificationSets from dependencies as it caused potential loops
+  }, [activeSetId, verificationSets, isRunning, setVerificationSets, logExecution]); // Depend on verificationSets
 
 
    const resetVerification = () => {
@@ -842,6 +850,12 @@ export default function Home() {
                              ? "Add verification steps to this configuration first."
                              : "Run the verification process to generate the report."}
                         </p>
+                         {!isRunning && stepsForReportCheck.length > 0 && stepsForReportCheck.every(s => s.status === 'pending') && (
+                            <p className="text-sm text-accent mt-2">Click 'Run Verification' to start.</p>
+                         )}
+                         {isRunning && (
+                              <p className="text-sm text-accent mt-2">Verification in progress...</p>
+                         )}
                     </CardContent>
                 </Card>
               )}
@@ -864,3 +878,4 @@ export default function Home() {
     </main>
   );
 }
+
