@@ -129,9 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   // Return the provider wrapping the children
-  // Ensure the JSX syntax is correct here.
-  // The previous error "Expected '>', got 'value'" strongly suggests a parsing issue
-  // rather than a logic error. Let's ensure the JSX is absolutely standard.
+  // Ensure the JSX syntax is correct here. It seems standard.
   return (
     <AuthContext.Provider value={value}>
       {children}
