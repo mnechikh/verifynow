@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useLocalStorage } from '@/hooks/use-local-storage'; // Import useLocalStorage hook
 import type { VerificationStep, VerificationStatus, CriteriaVerificationStep, ApiVerificationStep, VerificationSet } from '@/types/verification';
-import { Play, Settings, FileText, RotateCcw, Loader2, Upload, Download, PlusCircle, Trash2, Edit, Copy } from 'lucide-react';
+import { Play, Settings, FileText, RotateCcw, Loader2, Upload, Download, PlusCircle, Trash2, Edit, Copy, RefreshCcw } from 'lucide-react'; // Added RefreshCcw for Retry
 
 
 // --- Helper Functions ---
@@ -233,6 +233,16 @@ export default function Home() {
     }
    }, [verificationSets, activeSetId, activeSet, setActiveSetId]);
 
+   // Check if the report was previously visible for the current active set
+   useEffect(() => {
+     if (activeSet) {
+       const hasCompletedSteps = activeSet.steps.some(s => s.status !== 'pending' && s.status !== 'running');
+       setIsReportVisible(hasCompletedSteps);
+     } else {
+       setIsReportVisible(false);
+     }
+   }, [activeSetId, activeSet]); // Depend on activeSetId to re-evaluate when set changes
+
 
   const handleStepsChange = (updatedSteps: VerificationStep[]) => {
     if (!activeSetId) return;
@@ -252,18 +262,30 @@ export default function Home() {
     setActiveTab("config"); // Stay on config tab after changes
   };
 
-  const runVerification = useCallback(async () => {
+  const runVerification = useCallback(async (retryFailed = false) => {
     if (isRunning || !activeSet || activeSet.steps.length === 0) return;
 
     setIsRunning(true);
-    setIsReportVisible(false);
+    setIsReportVisible(false); // Hide report initially
     setActiveTab("execution"); // Switch to execution tab
 
     // Reset statuses only for the active set before running
     let currentSteps = [...activeSet.steps]; // Get a mutable copy of the active set's steps
-    currentSteps = currentSteps.map(s => ({ ...s, status: 'pending', resultMessage: undefined }));
 
-    // Update the state immediately to show pending status
+    if (retryFailed) {
+        // Reset only failed or warning steps to pending for retry
+        currentSteps = currentSteps.map(s =>
+            (s.status === 'failure' || s.status === 'warning')
+                ? { ...s, status: 'pending', resultMessage: undefined }
+                : s // Keep successful steps as they are
+        );
+    } else {
+        // Full run: Reset all steps to pending
+        currentSteps = currentSteps.map(s => ({ ...s, status: 'pending', resultMessage: undefined }));
+    }
+
+
+    // Update the state immediately to show initial statuses
      setVerificationSets(prevSets => prevSets.map(set =>
         set.id === activeSetId ? { ...set, steps: currentSteps } : set
       ));
@@ -271,6 +293,11 @@ export default function Home() {
 
     for (let i = 0; i < currentSteps.length; i++) {
       const currentStepId = currentSteps[i].id;
+
+       // Skip steps that were already successful if retrying
+       if (retryFailed && currentSteps[i].status === 'success') {
+          continue;
+       }
 
       // Set current step to 'running'
       currentSteps[i] = { ...currentSteps[i], status: 'running' };
@@ -297,7 +324,7 @@ export default function Home() {
     }
 
     setIsRunning(false);
-    setIsReportVisible(true);
+    setIsReportVisible(true); // Show report when finished
     setActiveTab("report"); // Switch to report tab when done
   }, [activeSet, isRunning, activeSetId, setVerificationSets]); // Added dependencies
 
@@ -487,6 +514,8 @@ export default function Home() {
   // Determine if report tab should be disabled
   const stepsForReportCheck = activeSet?.steps || [];
   const isReportTabDisabled = stepsForReportCheck.length === 0 || (!isReportVisible && !isRunning && stepsForReportCheck.every(s => s.status === 'pending'));
+  // Determine if Retry button should be enabled
+  const canRetry = isReportVisible && !isRunning && stepsForReportCheck.some(s => s.status === 'failure' || s.status === 'warning');
 
 
   return (
@@ -541,7 +570,7 @@ export default function Home() {
                             <Label htmlFor="active-config-select">Active Configuration</Label>
                              <Select value={activeSetId ?? ""} onValueChange={(id) => {
                                  setActiveSetId(id);
-                                 setIsReportVisible(false); // Reset report visibility when changing sets
+                                 // setIsReportVisible(false); // Reset report visibility handled by useEffect now
                                  setActiveTab('config'); // Switch to config tab
                                 }}>
                                 <SelectTrigger id="active-config-select" className="w-full">
@@ -628,9 +657,13 @@ export default function Home() {
                  Current Configuration: <span className="text-primary">{activeSet.name}</span>
              </h2>
               <div className="flex gap-2">
-                <Button onClick={runVerification} disabled={isRunning || !activeSet || activeSet.steps.length === 0} className="bg-accent hover:bg-accent/90 text-accent-foreground">
+                <Button onClick={() => runVerification()} disabled={isRunning || !activeSet || activeSet.steps.length === 0} className="bg-accent hover:bg-accent/90 text-accent-foreground">
                     {isRunning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
                     {isRunning ? 'Verifying...' : 'Run Verification'}
+                </Button>
+                 <Button onClick={() => runVerification(true)} variant="outline" disabled={!canRetry || isRunning} title="Retry failed/warning steps">
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    Retry
                 </Button>
                  <Button onClick={resetVerification} variant="outline" disabled={isRunning && !isReportVisible}>
                     <RotateCcw className="mr-2 h-4 w-4" />
