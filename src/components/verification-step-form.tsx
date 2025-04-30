@@ -88,44 +88,31 @@ export function VerificationStepForm({
 
   const selectedType = form.watch("type");
 
-  // Effect to reset fields when type changes for a *new* form instance.
-  // Using form.reset is generally safer during render cycles than multiple resetField calls.
-  useEffect(() => {
-      // Only reset if it's a *new* step form (no initialData) and not disabled
-      if (!initialData && !disabled) {
-          // Get current values for fields to preserve
-          const currentName = form.getValues("name");
-          const currentDescription = form.getValues("description");
+  // Removed the problematic useEffect hook
 
-          // Define the base reset object
-          const resetBase = {
-                name: currentName,
-                description: currentDescription,
-                // API fields set to default empty/undefined
-                apiUrl: "",
-                apiKeyPath: "",
-                expectedValue: "",
-                apiToken: "",
-                // Criteria field set to default empty/undefined
-                criteria: "",
-          }
+  const handleTypeChange = (newValue: StepType) => {
+    const previousType = form.getValues('type');
+    // Update the form state first
+    form.setValue('type', newValue, { shouldValidate: true, shouldDirty: true });
 
-          if (selectedType === 'criteria') {
-              form.reset({
-                  ...resetBase,
-                  type: 'criteria',
-              }, { keepDefaultValues: false, keepValues: false }); // Ensure full reset based on new defaults
-          } else if (selectedType === 'api') {
-              form.reset({
-                  ...resetBase,
-                  type: 'api',
-              }, { keepDefaultValues: false, keepValues: false }); // Ensure full reset based on new defaults
-          }
+    // Clear irrelevant fields only if it's a new form and the type actually changed
+    if (!initialData && !disabled && newValue !== previousType) {
+      if (newValue === 'criteria') {
+        // Clear API fields
+        form.setValue('apiUrl', '');
+        form.setValue('apiKeyPath', '');
+        form.setValue('expectedValue', '');
+        form.setValue('apiToken', '');
+        // console.log("Cleared API fields");
+      } else if (newValue === 'api') {
+        // Clear Criteria field
+        form.setValue('criteria', '');
+        // console.log("Cleared Criteria field");
       }
-      // Only trigger this effect when the selectedType changes for a new form.
-      // Avoid including 'form' directly if it causes infinite loops, though it's usually needed.
-      // If issues persist, consider more granular control or alternative state management.
-  }, [selectedType, initialData, disabled, form.reset, form.getValues]);
+       // Trigger validation after clearing fields if needed, though setting type should do it
+      // form.trigger();
+    }
+  };
 
 
   const handleFormSubmit = (values: VerificationStepFormValues) => {
@@ -203,14 +190,16 @@ export function VerificationStepForm({
               <FormField
                   control={form.control}
                   name="type"
-                  render={({ field }) => (
+                  render={({ field }) => ( // Field now correctly provides value and original onChange
                       <FormItem className="space-y-3">
                       <FormLabel>Verification Type</FormLabel>
                       <FormControl>
                           <RadioGroup
-                          onValueChange={field.onChange}
-                          defaultValue={field.value}
-                          className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4"
+                            // Use the custom handler which calls field.onChange internally
+                            onValueChange={(value: string) => handleTypeChange(value as StepType)}
+                            value={field.value} // Use value from field
+                            className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4"
+                            disabled={field.disabled}
                           >
                           <FormItem className="flex items-center space-x-3 space-y-0">
                               <FormControl>
