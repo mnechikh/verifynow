@@ -57,6 +57,19 @@ interface VerificationStepFormProps {
   disabled?: boolean; // Added disabled prop
 }
 
+// Define default values outside the component to avoid re-creation on every render
+const defaultNewStepValues: VerificationStepFormValues = {
+    name: "",
+    description: "",
+    type: 'criteria', // Default to criteria for new steps
+    criteria: "",
+    apiUrl: "",
+    apiKeyPath: "",
+    expectedValue: "",
+    apiToken: "",
+};
+
+
 export function VerificationStepForm({
   onSubmit,
   initialData,
@@ -64,56 +77,33 @@ export function VerificationStepForm({
   disabled = false, // Default to not disabled
 }: VerificationStepFormProps) {
 
-   const defaultValues: Partial<VerificationStepFormValues> = initialData ? {
-        ...initialData,
-        type: initialData.type || 'criteria', // Default to criteria if not set
-        apiToken: initialData.apiToken || '', // Include apiToken
-    } : {
-        name: "",
-        description: "",
-        type: 'criteria', // Default to criteria for new steps
-        criteria: "",
-        apiUrl: "",
-        apiKeyPath: "",
-        expectedValue: "",
-        apiToken: "", // Default empty token
-    };
+   // Determine default values based on whether it's an edit or add form
+   const defaultValues: VerificationStepFormValues = initialData ? {
+        ...defaultNewStepValues, // Start with base defaults
+        ...initialData, // Override with initialData for editing
+        type: initialData.type || 'criteria', // Ensure type is set
+        apiToken: initialData.apiToken || '', // Handle optional token
+    } : defaultNewStepValues; // Use base defaults for adding new step
 
 
   const form = useForm<VerificationStepFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: defaultValues,
     disabled: disabled, // Pass disabled state to the form
+    // Re-evaluate defaultValues only when initialData changes (for editing)
+    // This prevents unnecessary resets when the type changes
+    resetOptions: {
+        keepDirtyValues: false, // Reset dirty state on reset
+        keepErrors: false, // Clear errors on reset
+    },
   });
 
   const selectedType = form.watch("type");
-  const isMounted = useRef(false); // Track mount status
 
-   // Effect to clear irrelevant fields when type changes, only AFTER initial mount and NOT during editing
+   // Reset form when switching between add/edit modes or when initialData itself changes
    useEffect(() => {
-    // Ensure this only runs client-side after the component has mounted
-    if (!isMounted.current) {
-      isMounted.current = true;
-      return; // Skip effect on initial render
-    }
-
-    // Do not clear fields if we are editing (initialData is provided) or if the form is disabled
-    if (initialData || disabled) {
-      return;
-    }
-
-    // Clear fields based on the selected type, using flags to avoid triggering validation or dirty state
-    if (selectedType === 'criteria') {
-      form.setValue('apiUrl', '', { shouldValidate: false, shouldDirty: false });
-      form.setValue('apiKeyPath', '', { shouldValidate: false, shouldDirty: false });
-      form.setValue('expectedValue', '', { shouldValidate: false, shouldDirty: false });
-      form.setValue('apiToken', '', { shouldValidate: false, shouldDirty: false });
-    } else if (selectedType === 'api') {
-      form.setValue('criteria', '', { shouldValidate: false, shouldDirty: false });
-    }
-    // Intentionally not calling form.trigger() here to avoid potential render loop issues
-
-  }, [selectedType, initialData, disabled, form]); // Include form in dependencies as setValue is used
+     form.reset(defaultValues);
+   }, [initialData, form, defaultValues]); // Depend on initialData and the memoized defaultValues
 
 
   const handleFormSubmit = (values: VerificationStepFormValues) => {
@@ -143,18 +133,7 @@ export function VerificationStepForm({
     onSubmit(submitData);
     // Reset only if it's not an edit form (i.e., initialData was not provided)
     if (!initialData) {
-        // Reset mount ref to allow clearing on next 'add' action
-        // isMounted.current = false; // Let's see if this is needed, might cause issues if form is immediately reused
-        form.reset( { // Reset form to default values after submission, explicitly setting type back if needed
-            name: "",
-            description: "",
-            type: 'criteria', // Reset type to default
-            criteria: "",
-            apiUrl: "",
-            apiKeyPath: "",
-            expectedValue: "",
-            apiToken: "",
-        });
+        form.reset(defaultNewStepValues); // Reset form to default values for adding new step
     }
   };
 
