@@ -2,7 +2,7 @@
 "use client";
 
 import type * as React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react'; // Import useRef
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
@@ -87,32 +87,35 @@ export function VerificationStepForm({
   });
 
   const selectedType = form.watch("type");
+  const isMounted = useRef(false); // Track mount status
 
-  // Removed the problematic useEffect hook
+   // Effect to clear irrelevant fields when type changes, avoiding updates during render
+   useEffect(() => {
+     // Skip the effect on the initial mount or if the form is for editing
+     if (!isMounted.current || initialData || disabled) {
+       if (!isMounted.current) isMounted.current = true; // Mark as mounted after first render
+       return;
+     }
 
-  const handleTypeChange = (newValue: StepType) => {
-    const previousType = form.getValues('type');
-    // Update the form state first
-    form.setValue('type', newValue, { shouldValidate: true, shouldDirty: true });
+     // Use setTimeout to defer the state update slightly after the render cycle completes
+     const timer = setTimeout(() => {
+       if (selectedType === 'criteria') {
+         // Clear API fields
+         form.setValue('apiUrl', '', { shouldValidate: false, shouldDirty: true });
+         form.setValue('apiKeyPath', '', { shouldValidate: false, shouldDirty: true });
+         form.setValue('expectedValue', '', { shouldValidate: false, shouldDirty: true });
+         form.setValue('apiToken', '', { shouldValidate: false, shouldDirty: true });
+       } else if (selectedType === 'api') {
+         // Clear Criteria field
+         form.setValue('criteria', '', { shouldValidate: false, shouldDirty: true });
+       }
+       // Re-validate the form after clearing fields if necessary
+       form.trigger();
+     }, 0);
 
-    // Clear irrelevant fields only if it's a new form and the type actually changed
-    if (!initialData && !disabled && newValue !== previousType) {
-      if (newValue === 'criteria') {
-        // Clear API fields
-        form.setValue('apiUrl', '');
-        form.setValue('apiKeyPath', '');
-        form.setValue('expectedValue', '');
-        form.setValue('apiToken', '');
-        // console.log("Cleared API fields");
-      } else if (newValue === 'api') {
-        // Clear Criteria field
-        form.setValue('criteria', '');
-        // console.log("Cleared Criteria field");
-      }
-       // Trigger validation after clearing fields if needed, though setting type should do it
-      // form.trigger();
-    }
-  };
+     return () => clearTimeout(timer); // Cleanup timeout
+
+   }, [selectedType, initialData, disabled, form]); // form added as dependency
 
 
   const handleFormSubmit = (values: VerificationStepFormValues) => {
@@ -142,6 +145,7 @@ export function VerificationStepForm({
     onSubmit(submitData);
     // Reset only if it's not an edit form (i.e., initialData was not provided)
     if (!initialData) {
+        isMounted.current = false; // Reset mount ref to allow clearing on next add
         form.reset( { // Reset form to default values after submission, explicitly setting type back if needed
             name: "",
             description: "",
@@ -195,8 +199,8 @@ export function VerificationStepForm({
                       <FormLabel>Verification Type</FormLabel>
                       <FormControl>
                           <RadioGroup
-                            // Use the custom handler which calls field.onChange internally
-                            onValueChange={(value: string) => handleTypeChange(value as StepType)}
+                            // Use the standard field.onChange provided by Controller
+                            onValueChange={(value: string) => field.onChange(value as StepType)}
                             value={field.value} // Use value from field
                             className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4"
                             disabled={field.disabled}
