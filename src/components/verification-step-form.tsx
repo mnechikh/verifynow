@@ -58,7 +58,7 @@ interface VerificationStepFormProps {
 }
 
 // Define default values outside the component to avoid re-creation on every render
-const defaultNewStepValues: VerificationStepFormValues = {
+const baseDefaultValues: VerificationStepFormValues = {
     name: "",
     description: "",
     type: 'criteria', // Default to criteria for new steps
@@ -77,21 +77,11 @@ export function VerificationStepForm({
   disabled = false, // Default to not disabled
 }: VerificationStepFormProps) {
 
-   // Determine default values based on whether it's an edit or add form
-   const defaultValues: VerificationStepFormValues = initialData ? {
-        ...defaultNewStepValues, // Start with base defaults
-        ...initialData, // Override with initialData for editing
-        type: initialData.type || 'criteria', // Ensure type is set
-        apiToken: initialData.apiToken || '', // Handle optional token
-    } : defaultNewStepValues; // Use base defaults for adding new step
-
-
-  const form = useForm<VerificationStepFormValues>({
+   const form = useForm<VerificationStepFormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: defaultValues,
+    // Set initial default values - will be potentially reset by useEffect
+    defaultValues: initialData ? { ...baseDefaultValues, ...initialData, apiToken: initialData.apiToken || '' } : baseDefaultValues,
     disabled: disabled, // Pass disabled state to the form
-    // Re-evaluate defaultValues only when initialData changes (for editing)
-    // This prevents unnecessary resets when the type changes
     resetOptions: {
         keepDirtyValues: false, // Reset dirty state on reset
         keepErrors: false, // Clear errors on reset
@@ -102,8 +92,16 @@ export function VerificationStepForm({
 
    // Reset form when switching between add/edit modes or when initialData itself changes
    useEffect(() => {
-     form.reset(defaultValues);
-   }, [initialData, form, defaultValues]); // Depend on initialData and the memoized defaultValues
+     // Calculate the appropriate default values *inside* the effect
+     const defaultValuesToSet: VerificationStepFormValues = initialData ? {
+        ...baseDefaultValues, // Start with base defaults
+        ...initialData, // Override with initialData for editing
+        type: initialData.type || 'criteria', // Ensure type is set
+        apiToken: initialData.apiToken || '', // Handle optional token
+     } : baseDefaultValues; // Use base defaults for adding new step
+
+     form.reset(defaultValuesToSet);
+   }, [initialData, form]); // Depend only on initialData and form instance
 
 
   const handleFormSubmit = (values: VerificationStepFormValues) => {
@@ -133,12 +131,11 @@ export function VerificationStepForm({
     onSubmit(submitData);
     // Reset only if it's not an edit form (i.e., initialData was not provided)
     if (!initialData) {
-        form.reset(defaultNewStepValues); // Reset form to default values for adding new step
+        form.reset(baseDefaultValues); // Reset form to base default values for adding new step
     }
   };
 
   return (
-    // Use a Card only if it's not an editing form, otherwise just the form fields
      <Form {...form}>
        <fieldset disabled={disabled} className="space-y-4 border p-4 rounded-md bg-muted/20 disabled:opacity-70 disabled:cursor-not-allowed">
           <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4">
@@ -172,12 +169,11 @@ export function VerificationStepForm({
               <FormField
                   control={form.control}
                   name="type"
-                  render={({ field }) => ( // Field now correctly provides value and original onChange
+                  render={({ field }) => (
                       <FormItem className="space-y-3">
                       <FormLabel>Verification Type</FormLabel>
                       <FormControl>
                           <RadioGroup
-                            // Use the standard field.onChange provided by Controller
                             onValueChange={(value: string) => field.onChange(value as StepType)}
                             value={field.value} // Use value from field
                             className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4"
@@ -302,4 +298,3 @@ export function VerificationStepForm({
 
   );
 }
-
