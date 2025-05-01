@@ -89,33 +89,31 @@ export function VerificationStepForm({
   const selectedType = form.watch("type");
   const isMounted = useRef(false); // Track mount status
 
-   // Effect to clear irrelevant fields when type changes, avoiding updates during render
+   // Effect to clear irrelevant fields when type changes, only AFTER initial mount and NOT during editing
    useEffect(() => {
-     // Skip the effect on the initial mount or if the form is for editing
-     if (!isMounted.current || initialData || disabled) {
-       if (!isMounted.current) isMounted.current = true; // Mark as mounted after first render
-       return;
-     }
+    // Ensure this only runs client-side after the component has mounted
+    if (!isMounted.current) {
+      isMounted.current = true;
+      return; // Skip effect on initial render
+    }
 
-     // Use setTimeout to defer the state update slightly after the render cycle completes
-     const timer = setTimeout(() => {
-       if (selectedType === 'criteria') {
-         // Clear API fields
-         form.setValue('apiUrl', '', { shouldValidate: false, shouldDirty: true });
-         form.setValue('apiKeyPath', '', { shouldValidate: false, shouldDirty: true });
-         form.setValue('expectedValue', '', { shouldValidate: false, shouldDirty: true });
-         form.setValue('apiToken', '', { shouldValidate: false, shouldDirty: true });
-       } else if (selectedType === 'api') {
-         // Clear Criteria field
-         form.setValue('criteria', '', { shouldValidate: false, shouldDirty: true });
-       }
-       // Re-validate the form after clearing fields if necessary
-       form.trigger();
-     }, 0);
+    // Do not clear fields if we are editing (initialData is provided) or if the form is disabled
+    if (initialData || disabled) {
+      return;
+    }
 
-     return () => clearTimeout(timer); // Cleanup timeout
+    // Clear fields based on the selected type, using flags to avoid triggering validation or dirty state
+    if (selectedType === 'criteria') {
+      form.setValue('apiUrl', '', { shouldValidate: false, shouldDirty: false });
+      form.setValue('apiKeyPath', '', { shouldValidate: false, shouldDirty: false });
+      form.setValue('expectedValue', '', { shouldValidate: false, shouldDirty: false });
+      form.setValue('apiToken', '', { shouldValidate: false, shouldDirty: false });
+    } else if (selectedType === 'api') {
+      form.setValue('criteria', '', { shouldValidate: false, shouldDirty: false });
+    }
+    // Intentionally not calling form.trigger() here to avoid potential render loop issues
 
-   }, [selectedType, initialData, disabled, form]); // form added as dependency
+  }, [selectedType, initialData, disabled, form]); // Include form in dependencies as setValue is used
 
 
   const handleFormSubmit = (values: VerificationStepFormValues) => {
@@ -145,7 +143,8 @@ export function VerificationStepForm({
     onSubmit(submitData);
     // Reset only if it's not an edit form (i.e., initialData was not provided)
     if (!initialData) {
-        isMounted.current = false; // Reset mount ref to allow clearing on next add
+        // Reset mount ref to allow clearing on next 'add' action
+        // isMounted.current = false; // Let's see if this is needed, might cause issues if form is immediately reused
         form.reset( { // Reset form to default values after submission, explicitly setting type back if needed
             name: "",
             description: "",
@@ -324,3 +323,4 @@ export function VerificationStepForm({
 
   );
 }
+
