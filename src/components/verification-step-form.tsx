@@ -101,10 +101,10 @@ export function VerificationStepForm({
      } : baseDefaultValues; // Use base defaults for adding new step
 
      form.reset(defaultValuesToSet);
-   }, [initialData, form]); // Depend only on initialData and form instance
+   }, [initialData, form.reset]); // Depend only on initialData and form instance reset method
 
 
-  const handleFormSubmit = (values: VerificationStepFormValues) => {
+   const handleFormSubmit = (values: VerificationStepFormValues) => {
      if (disabled) return; // Prevent submission if disabled
 
      let submitData: Omit<CriteriaVerificationStep | ApiVerificationStep, 'id' | 'status'>;
@@ -129,11 +129,9 @@ export function VerificationStepForm({
     }
 
     onSubmit(submitData);
-    // Reset only if it's not an edit form (i.e., initialData was not provided)
-    if (!initialData) {
-        form.reset(baseDefaultValues); // Reset form to base default values for adding new step
-    }
   };
+
+  // Removed problematic useEffect hook that was causing syntax error
 
   return (
      <Form {...form}>
@@ -174,7 +172,11 @@ export function VerificationStepForm({
                       <FormLabel>Verification Type</FormLabel>
                       <FormControl>
                           <RadioGroup
-                            onValueChange={(value: string) => field.onChange(value as StepType)}
+                            onValueChange={(value: string) => {
+                                field.onChange(value as StepType);
+                                // Manually trigger re-validation or clear errors if needed when type changes
+                                // form.trigger(); // Example: Trigger validation for all fields
+                            }}
                             value={field.value} // Use value from field
                             className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4"
                             disabled={field.disabled}
