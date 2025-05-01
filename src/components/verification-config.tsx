@@ -171,7 +171,11 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
                             <Button variant="outline" onClick={cancelEditing} className="mt-2">Cancel Edit</Button>
                         </div>
                     ) : (
-                        <VerificationStepForm onSubmit={addStep} disabled={!isAdmin} /> // Disable form if not admin
+                        <VerificationStepForm
+                            key="add-new-step" // Use a consistent key for the "add" mode
+                            onSubmit={addStep}
+                            disabled={!isAdmin} // Disable form if not admin
+                        />
                     )}
                 </>
             )}
@@ -190,4 +194,3 @@ export function VerificationConfig({ initialSteps, onStepsChange }: Verification
     </div>
   );
 }
-

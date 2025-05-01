@@ -77,10 +77,18 @@ export function VerificationStepForm({
   disabled = false, // Default to not disabled
 }: VerificationStepFormProps) {
 
+   // Calculate the appropriate default values based on whether initialData is present
+   const defaultValuesToSet: VerificationStepFormValues = initialData ? {
+      ...baseDefaultValues, // Start with base defaults
+      ...initialData, // Override with initialData for editing
+      type: initialData.type || 'criteria', // Ensure type is set
+      apiToken: initialData.apiToken || '', // Handle optional token
+   } : baseDefaultValues; // Use base defaults for adding new step
+
+
    const form = useForm<VerificationStepFormValues>({
     resolver: zodResolver(formSchema),
-    // Set initial default values - will be potentially reset by useEffect
-    defaultValues: initialData ? { ...baseDefaultValues, ...initialData, apiToken: initialData.apiToken || '' } : baseDefaultValues,
+    defaultValues: defaultValuesToSet, // Set defaults based on add/edit mode
     disabled: disabled, // Pass disabled state to the form
     resetOptions: {
         keepDirtyValues: false, // Reset dirty state on reset
@@ -90,19 +98,8 @@ export function VerificationStepForm({
 
   const selectedType = form.watch("type");
 
-   // Reset form when switching between add/edit modes or when initialData itself changes
-   useEffect(() => {
-     // Calculate the appropriate default values *inside* the effect
-     const defaultValuesToSet: VerificationStepFormValues = initialData ? {
-        ...baseDefaultValues, // Start with base defaults
-        ...initialData, // Override with initialData for editing
-        type: initialData.type || 'criteria', // Ensure type is set
-        apiToken: initialData.apiToken || '', // Handle optional token
-     } : baseDefaultValues; // Use base defaults for adding new step
-
-     form.reset(defaultValuesToSet);
-   }, [initialData, form.reset]); // Depend only on initialData and form instance reset method
-
+   // Removed the problematic useEffect hook that was causing setState-in-render error.
+   // The key prop added in VerificationConfig.tsx now handles re-mounting the form correctly.
 
    const handleFormSubmit = (values: VerificationStepFormValues) => {
      if (disabled) return; // Prevent submission if disabled
@@ -129,9 +126,12 @@ export function VerificationStepForm({
     }
 
     onSubmit(submitData);
+    // Optionally reset form after successful submission (if not editing)
+    if (!initialData) {
+        form.reset(baseDefaultValues);
+    }
   };
 
-  // Removed problematic useEffect hook that was causing syntax error
 
   return (
      <Form {...form}>
@@ -174,8 +174,6 @@ export function VerificationStepForm({
                           <RadioGroup
                             onValueChange={(value: string) => {
                                 field.onChange(value as StepType);
-                                // Manually trigger re-validation or clear errors if needed when type changes
-                                // form.trigger(); // Example: Trigger validation for all fields
                             }}
                             value={field.value} // Use value from field
                             className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4"
