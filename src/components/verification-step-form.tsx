@@ -2,7 +2,7 @@
 "use client";
 
 import type * as React from 'react';
-import { useState, useEffect, useRef } from 'react'; // Import useRef and useEffect
+import { useEffect } from 'react'; // Keep useEffect for potential future use or initial loading logic if needed, but not for resetting fields on type change
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
@@ -10,8 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form"; // Added FormDescription
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import type { VerificationStep, StepType, CriteriaVerificationStep, ApiVerificationStep } from '@/types/verification';
 
 // Base schema for common fields
@@ -25,10 +24,7 @@ const baseSchema = z.object({
 const criteriaSchema = baseSchema.extend({
   type: z.literal('criteria'),
   criteria: z.string().min(1, { message: "Validation criteria are required." }),
-  apiUrl: z.string().optional(), // Keep optional to avoid validation errors when not selected
-  apiKeyPath: z.string().optional(),
-  expectedValue: z.string().optional(),
-  apiToken: z.string().optional(), // Keep optional
+  // Remove API fields from criteria schema - they shouldn't exist here
 });
 
 // Schema for 'api' type
@@ -38,15 +34,12 @@ const apiSchema = baseSchema.extend({
   apiKeyPath: z.string().min(1, { message: "Response Key Path is required." }),
   expectedValue: z.string().min(1, { message: "Expected Value is required." }),
   apiToken: z.string().optional(), // Optional API token
-  criteria: z.string().optional(), // Keep optional
+  // Remove criteria field from API schema
 });
 
-// Discriminated union schema
-const formSchema = z.discriminatedUnion("type", [
-  criteriaSchema,
-  apiSchema,
-]);
-
+// Discriminated union schema using refine for better conditional validation
+// This ensures that fields only relevant to one type are not required by the other.
+const formSchema = z.union([criteriaSchema, apiSchema]);
 
 type VerificationStepFormValues = z.infer<typeof formSchema>;
 
@@ -57,8 +50,8 @@ interface VerificationStepFormProps {
   disabled?: boolean; // Added disabled prop
 }
 
-// Define default values outside the component to avoid re-creation on every render
-const baseDefaultValues: VerificationStepFormValues = {
+// Define default values outside the component
+const baseDefaultValues: Partial<VerificationStepFormValues> = {
     name: "",
     description: "",
     type: 'criteria', // Default to criteria for new steps
@@ -74,82 +67,59 @@ export function VerificationStepForm({
   onSubmit,
   initialData,
   buttonText = "Add Step",
-  disabled = false, // Default to not disabled
+  disabled = false,
 }: VerificationStepFormProps) {
 
-   // Calculate the appropriate default values based on whether initialData is present
-   const defaultValuesToSet: VerificationStepFormValues = initialData ? {
-      ...baseDefaultValues, // Start with base defaults
-      ...initialData, // Override with initialData for editing
-      type: initialData.type || 'criteria', // Ensure type is set
-      apiToken: initialData.apiToken || '', // Handle optional token
-   } : baseDefaultValues; // Use base defaults for adding new step
+   // Use initialData if provided, otherwise use base defaults
+   const defaultValuesToSet = initialData
+     ? { ...baseDefaultValues, ...initialData }
+     : baseDefaultValues;
 
 
    const form = useForm<VerificationStepFormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: defaultValuesToSet, // Set defaults based on add/edit mode
-    disabled: disabled, // Pass disabled state to the form
-    resetOptions: {
-        keepDirtyValues: false, // Reset dirty state on reset
-        keepErrors: false, // Clear errors on reset
-    },
-  });
+    defaultValues: defaultValuesToSet,
+    disabled: disabled,
+    // Remove resetOptions, let RHF handle resets normally
+   });
 
+  // Watch the type field to control conditional rendering
   const selectedType = form.watch("type");
 
-   // Effect to reset irrelevant fields when the type changes
-   useEffect(() => {
-     const currentType = form.getValues('type'); // Get current type from form state
-     // console.log("Type changed to:", currentType); // Debugging log
-
-     // Reset fields not relevant to the selected type
-     // Use resetField to clear value, error, and dirty state for specific fields
-     if (currentType === 'criteria') {
-         // console.log("Resetting API fields"); // Debugging log
-         form.resetField('apiUrl');
-         form.resetField('apiKeyPath');
-         form.resetField('expectedValue');
-         form.resetField('apiToken');
-     } else if (currentType === 'api') {
-         // console.log("Resetting criteria field"); // Debugging log
-         form.resetField('criteria');
-     }
-     // This effect should run whenever the selectedType changes.
-     // Including `form` in dependencies ensures the effect has the correct form instance,
-     // especially if the form instance itself could theoretically change (though unlikely here).
-   }, [selectedType, form]);
-
+   // Removed the problematic useEffect hook that called resetField
 
    const handleFormSubmit = (values: VerificationStepFormValues) => {
-     if (disabled) return; // Prevent submission if disabled
+     if (disabled) return;
 
+     // Construct the submit data based on the actual type from the form values
      let submitData: Omit<CriteriaVerificationStep | ApiVerificationStep, 'id' | 'status'>;
 
-    if (values.type === 'criteria') {
-      submitData = {
-        type: 'criteria',
-        name: values.name,
-        description: values.description || '',
-        criteria: values.criteria,
-      };
-    } else { // type === 'api'
-      submitData = {
-        type: 'api',
-        name: values.name,
-        description: values.description || '',
-        apiUrl: values.apiUrl,
-        apiKeyPath: values.apiKeyPath,
-        expectedValue: values.expectedValue,
-        apiToken: values.apiToken || undefined, // Submit token or undefined if empty
-      };
-    }
+     if (values.type === 'criteria') {
+       // Ensure only criteria fields are included
+       submitData = {
+         type: 'criteria',
+         name: values.name,
+         description: values.description || '',
+         criteria: values.criteria!, // Assert non-null as it's required by the schema for this type
+       };
+     } else { // type === 'api'
+       // Ensure only API fields are included
+       submitData = {
+         type: 'api',
+         name: values.name,
+         description: values.description || '',
+         apiUrl: values.apiUrl!, // Assert non-null
+         apiKeyPath: values.apiKeyPath!, // Assert non-null
+         expectedValue: values.expectedValue!, // Assert non-null
+         apiToken: values.apiToken || undefined, // Submit token or undefined if empty
+       };
+     }
 
     onSubmit(submitData);
-    // Optionally reset form after successful submission (if not editing)
+
+    // Reset form after submission *only* if we are adding a new step (no initialData)
     if (!initialData) {
-        // Reset form to base default values for adding new step
-        form.reset(baseDefaultValues);
+        form.reset(baseDefaultValues); // Reset to base defaults for a fresh "add" form
     }
   };
 
@@ -158,6 +128,7 @@ export function VerificationStepForm({
      <Form {...form}>
        <fieldset disabled={disabled} className="space-y-4 border p-4 rounded-md bg-muted/20 disabled:opacity-70 disabled:cursor-not-allowed">
           <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-4">
+              {/* Common Fields */}
               <FormField
                   control={form.control}
                   name="name"
@@ -185,6 +156,7 @@ export function VerificationStepForm({
                   )}
               />
 
+              {/* Type Selector */}
               <FormField
                   control={form.control}
                   name="type"
@@ -192,11 +164,10 @@ export function VerificationStepForm({
                       <FormItem className="space-y-3">
                       <FormLabel>Verification Type</FormLabel>
                       <FormControl>
+                          {/* Use Controller directly for RadioGroup if needed for more control, or keep as is */}
                           <RadioGroup
-                            onValueChange={(value: string) => {
-                                field.onChange(value as StepType);
-                            }}
-                            value={field.value} // Use value from field
+                            onValueChange={field.onChange} // Directly use RHF's onChange
+                            value={field.value}
                             className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-4"
                             disabled={field.disabled}
                           >
@@ -220,7 +191,9 @@ export function VerificationStepForm({
               />
 
 
-              {/* Conditional Fields */}
+              {/* --- Conditional Fields --- */}
+
+              {/* Criteria Specific Field */}
               {selectedType === 'criteria' && (
                   <FormField
                       control={form.control}
@@ -240,6 +213,7 @@ export function VerificationStepForm({
                   />
               )}
 
+              {/* API Specific Fields */}
               {selectedType === 'api' && (
                   <div className="space-y-4 p-4 border rounded-md bg-card shadow-sm">
                       <FormField
@@ -308,6 +282,7 @@ export function VerificationStepForm({
                       />
                   </div>
               )}
+              {/* --- End Conditional Fields --- */}
 
 
               <Button type="submit" className="bg-primary hover:bg-primary/90 text-primary-foreground" disabled={disabled}>
@@ -319,5 +294,3 @@ export function VerificationStepForm({
 
   );
 }
-
-    
