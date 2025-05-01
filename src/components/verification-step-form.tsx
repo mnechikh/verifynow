@@ -2,7 +2,7 @@
 "use client";
 
 import type * as React from 'react';
-import { useState, useEffect, useRef } from 'react'; // Import useRef
+import { useState, useEffect, useRef } from 'react'; // Import useRef and useEffect
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
@@ -98,8 +98,28 @@ export function VerificationStepForm({
 
   const selectedType = form.watch("type");
 
-   // Removed the problematic useEffect hook that was causing setState-in-render error.
-   // The key prop added in VerificationConfig.tsx now handles re-mounting the form correctly.
+   // Effect to reset irrelevant fields when the type changes
+   useEffect(() => {
+     const currentType = form.getValues('type'); // Get current type from form state
+     // console.log("Type changed to:", currentType); // Debugging log
+
+     // Reset fields not relevant to the selected type
+     // Use resetField to clear value, error, and dirty state for specific fields
+     if (currentType === 'criteria') {
+         // console.log("Resetting API fields"); // Debugging log
+         form.resetField('apiUrl');
+         form.resetField('apiKeyPath');
+         form.resetField('expectedValue');
+         form.resetField('apiToken');
+     } else if (currentType === 'api') {
+         // console.log("Resetting criteria field"); // Debugging log
+         form.resetField('criteria');
+     }
+     // This effect should run whenever the selectedType changes.
+     // Including `form` in dependencies ensures the effect has the correct form instance,
+     // especially if the form instance itself could theoretically change (though unlikely here).
+   }, [selectedType, form]);
+
 
    const handleFormSubmit = (values: VerificationStepFormValues) => {
      if (disabled) return; // Prevent submission if disabled
@@ -128,6 +148,7 @@ export function VerificationStepForm({
     onSubmit(submitData);
     // Optionally reset form after successful submission (if not editing)
     if (!initialData) {
+        // Reset form to base default values for adding new step
         form.reset(baseDefaultValues);
     }
   };
@@ -298,3 +319,5 @@ export function VerificationStepForm({
 
   );
 }
+
+    
